@@ -1,0 +1,70 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jsonresume/resume-schema/v1.0.0/schema.json",
+  "basics": {
+    "name": "Richie Tan",
+    "label": "Software Engineer",
+    "email": "",
+    "url": "https://richietan.dev",
+    "summary": "Software engineer passionate about building great products. Update this field with your real summary.",
+    "location": {
+      "city": "",
+      "region": "",
+      "countryCode": ""
+    },
+    "profiles": [
+      {
+        "network": "GitHub",
+        "username": "richtan",
+        "url": "https://github.com/richtan"
+      },
+      {
+        "network": "LinkedIn",
+        "username": "",
+        "url": "https://linkedin.com/in/"
+      }
+    ]
+  },
+  "work": [
+    {
+      "name": "Company Name",
+      "position": "Software Engineer",
+      "startDate": "2024-01-01",
+      "endDate": "",
+      "summary": "Update with your real work experience.",
+      "highlights": [
+        "Update with your real highlights"
+      ]
+    }
+  ],
+  "education": [
+    {
+      "institution": "University Name",
+      "area": "Computer Science",
+      "studyType": "Bachelor",
+      "startDate": "2020-01-01",
+      "endDate": "2024-01-01"
+    }
+  ],
+  "skills": [
+    {
+      "name": "Frontend",
+      "keywords": ["TypeScript", "React", "Next.js", "Tailwind CSS"]
+    },
+    {
+      "name": "Backend",
+      "keywords": ["Node.js", "Python"]
+    },
+    {
+      "name": "Tools & Platforms",
+      "keywords": ["Git", "Docker", "Vercel"]
+    }
+  ],
+  "projects": [
+    {
+      "name": "richietan.dev",
+      "description": "Personal website built as a 1:1 replica of the Claude Code CLI, inside a macOS window.",
+      "keywords": ["Next.js", "TypeScript", "AI SDK", "Tailwind CSS"],
+      "url": "https://richietan.dev"
+    }
+  ]
+}
