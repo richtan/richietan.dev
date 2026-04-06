@@ -116,7 +116,7 @@ export function InputArea({
         }}
       >
         <div className="flex items-baseline bg-transparent px-1 py-1">
-          <div className="w-4 shrink-0 select-none text-cc-text">›</div>
+          <div className="w-4 shrink-0 select-none text-cc-text">❯</div>
           <pre className="m-0 min-h-[1.2em] min-w-0 flex-1 whitespace-pre-wrap break-words text-cc-text">
             {promptBody}
             {showCaret ? <span className="select-none text-cc-text">█</span> : " "}

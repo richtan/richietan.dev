@@ -10,7 +10,7 @@ export function Message({ node }: { node: TranscriptNode }) {
       return (
         <div className="mt-1.5 bg-cc-rail px-1 text-cc-text">
           <div className="flex items-baseline py-1">
-            <span className="w-4 shrink-0 select-none text-cc-secondary">›</span>
+            <span className="w-4 shrink-0 select-none text-cc-secondary">❯</span>
             <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words">
               {node.text}
             </pre>
@@ -22,7 +22,7 @@ export function Message({ node }: { node: TranscriptNode }) {
       return (
         <div className="mt-1.5 bg-cc-rail px-1 text-cc-text">
           <div className="flex items-baseline py-1">
-            <span className="w-4 shrink-0 select-none text-cc-secondary">›</span>
+            <span className="w-4 shrink-0 select-none text-cc-secondary">❯</span>
             <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words">
               {node.command}
             </pre>
