@@ -25,7 +25,7 @@ const HEADER_LINES = [
     text: CLAUDE_CWD,
     muted: true,
   },
-];
+] as const;
 
 export function Welcome() {
   return (
