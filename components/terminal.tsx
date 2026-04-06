@@ -161,6 +161,27 @@ function createLocalError(text: string) {
   return createAssistantTextMessage(text, { localError: true });
 }
 
+function isInteractiveTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement
+    ? target.closest(
+        [
+          "a",
+          "button",
+          "input",
+          "textarea",
+          "select",
+          "option",
+          "label",
+          "summary",
+          "[role='button']",
+          "[role='link']",
+          "[contenteditable='true']",
+          "[data-terminal-interactive='true']",
+        ].join(","),
+      ) !== null
+    : false;
+}
+
 export function Terminal() {
   const {
     messages,
@@ -259,6 +280,23 @@ export function Terminal() {
     const atBottom =
       el.scrollHeight - el.scrollTop - el.clientHeight <= AUTO_SCROLL_THRESHOLD;
     setAutoScroll(atBottom);
+  }
+
+  function focusPrompt() {
+    textareaRef.current?.focus({ preventScroll: true });
+  }
+
+  function handleTerminalClick(event: React.MouseEvent<HTMLDivElement>) {
+    if (isInteractiveTarget(event.target)) {
+      return;
+    }
+
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      return;
+    }
+
+    focusPrompt();
   }
 
   function pushHistoryEntry(value: string) {
@@ -652,7 +690,10 @@ export function Terminal() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-cc-bg text-[13px] leading-[1.2] text-cc-text">
+    <div
+      className="flex h-full min-h-0 flex-col bg-cc-bg text-[13px] leading-[1.2] text-cc-text"
+      onClick={handleTerminalClick}
+    >
       <div
         ref={scrollRef}
         onScroll={handleScroll}

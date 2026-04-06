@@ -75,11 +75,8 @@ export function InputArea({
 
       <div
         className="relative cursor-text border-t border-b border-cc-border/90"
-        onMouseDown={(event) => {
-          if (event.target !== textareaRef.current) {
-            event.preventDefault();
-            textareaRef.current?.focus();
-          }
+        onClick={() => {
+          textareaRef.current?.focus({ preventScroll: true });
         }}
       >
         <div className="flex items-baseline bg-transparent px-1 py-1">
@@ -93,7 +90,7 @@ export function InputArea({
             value={input}
             onChange={(event) => onInputChange(event.target.value)}
             onKeyDown={onKeyDown}
-            className="absolute inset-0 h-full w-full resize-none overflow-hidden bg-transparent opacity-0 outline-none"
+            className="pointer-events-none absolute inset-0 h-full w-full resize-none overflow-hidden bg-transparent opacity-0 outline-none"
             rows={Math.max(1, input.split("\n").length)}
             disabled={disabled}
             spellCheck={false}
