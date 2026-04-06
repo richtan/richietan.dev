@@ -209,6 +209,7 @@ export function Terminal() {
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
   const [historySearchQuery, setHistorySearchQuery] = useState("");
   const [historySearchIndex, setHistorySearchIndex] = useState(0);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [spinnerElapsed, setSpinnerElapsed] = useState(0);
   const [spinnerMessageIndex, setSpinnerMessageIndex] = useState(0);
@@ -328,6 +329,7 @@ export function Terminal() {
     setAutoScroll(true);
     scrollToBottom("auto");
     setInput("");
+    setShowShortcuts(false);
     setSelectedSuggestion(0);
     setHistorySearchOpen(false);
     setHistorySearchQuery("");
@@ -335,10 +337,7 @@ export function Terminal() {
     pushHistoryEntry(trimmed);
 
     if (trimmed === "?") {
-      appendLocalMessages([
-        createUserTextMessage(trimmed),
-        createAssistantPanelMessage("help"),
-      ]);
+      setShowShortcuts((current) => !current);
       return;
     }
 
@@ -555,6 +554,19 @@ export function Terminal() {
       return;
     }
 
+    if (
+      event.key === "?" &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      input.length === 0 &&
+      suggestions.length === 0
+    ) {
+      event.preventDefault();
+      setShowShortcuts((current) => !current);
+      return;
+    }
+
     if (event.ctrlKey && event.key.toLowerCase() === "j") {
       event.preventDefault();
       replaceSelection(textareaRef.current, input, setInput, "\n");
@@ -654,6 +666,12 @@ export function Terminal() {
   }
 
   const isThinking = status === "submitted" || status === "streaming";
+  const effectiveShowShortcuts =
+    showShortcuts &&
+    input.length === 0 &&
+    !historySearchOpen &&
+    suggestions.length === 0 &&
+    !isThinking;
   const showSpinner = isThinking && messages[messages.length - 1]?.role === "user";
   const errorNode: TranscriptNode | null = error
     ? {
@@ -686,6 +704,7 @@ export function Terminal() {
         current: historyMatches.length === 0 ? 0 : historySearchIndex + 1,
         total: historyMatches.length,
       }}
+      showShortcuts={effectiveShowShortcuts}
     />
   );
 
