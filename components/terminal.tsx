@@ -298,7 +298,7 @@ export function Terminal() {
   const [committedAssistantText, setCommittedAssistantText] = useState<Record<string, string>>(
     {},
   );
-  const followOutputRef = useRef(true);
+  const [followOutput, setFollowOutput] = useState(true);
   const touchYRef = useRef<number | null>(null);
 
   const visibleMessages = useDeferredValue(messages.slice(screenStartIndex));
@@ -402,7 +402,10 @@ export function Terminal() {
     [committedAssistantText, error, isThinking, visibleMessages],
   );
 
-  const transcript = normalizeMessages(bufferedVisibleMessages, { verboseOutput });
+  const transcript = useMemo(
+    () => normalizeMessages(bufferedVisibleMessages, { verboseOutput }),
+    [bufferedVisibleMessages, verboseOutput],
+  );
   const suggestions = input.startsWith("/")
     ? SLASH_COMMANDS.filter((command) =>
         command.name.startsWith(input.slice(1).toLowerCase()),
@@ -418,30 +421,13 @@ export function Terminal() {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-100)));
   }, [history]);
 
-  function scrollToBottom(behavior: ScrollBehavior = "auto") {
+  function scrollToBottom() {
     const el = scrollRef.current;
     if (!el) {
       return;
     }
-    el.scrollTo({
-      top: el.scrollHeight,
-      behavior,
-    });
+    el.scrollTop = el.scrollHeight;
   }
-
-  useEffect(() => {
-    if (!followOutputRef.current) {
-      return;
-    }
-
-    const frame = requestAnimationFrame(() => {
-      scrollToBottom(status === "streaming" ? "auto" : "smooth");
-    });
-
-    return () => {
-      cancelAnimationFrame(frame);
-    };
-  }, [transcript, status, error]);
 
   useEffect(() => {
     if (status !== "submitted" && status !== "streaming") {
@@ -469,12 +455,12 @@ export function Terminal() {
   function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
-    followOutputRef.current = isNearBottom(el);
+    setFollowOutput(isNearBottom(el));
   }
 
   function handleWheelCapture(event: React.WheelEvent<HTMLDivElement>) {
     if (event.deltaY < 0) {
-      followOutputRef.current = false;
+      setFollowOutput(false);
     }
   }
 
@@ -489,7 +475,7 @@ export function Terminal() {
     }
 
     if (touchYRef.current !== null && nextY > touchYRef.current) {
-      followOutputRef.current = false;
+      setFollowOutput(false);
     }
 
     touchYRef.current = nextY;
@@ -538,8 +524,8 @@ export function Terminal() {
     setSpinnerFrame(0);
     setSpinnerMessageIndex((index) => (index + 1) % SPINNER_MESSAGES.length);
     clearError();
-    followOutputRef.current = true;
-    scrollToBottom("auto");
+    setFollowOutput(true);
+    scrollToBottom();
     setInput("");
     setShowShortcuts(false);
     setSelectedSuggestion(0);
@@ -612,7 +598,7 @@ export function Terminal() {
 
   async function clearConversation() {
     clearError();
-    followOutputRef.current = true;
+    setFollowOutput(true);
     setInput("");
     setHistory([]);
     setHistoryIndex(null);
@@ -884,14 +870,73 @@ export function Terminal() {
     suggestions.length === 0 &&
     !isThinking;
   const showSpinner = isThinking && messages[messages.length - 1]?.role === "user";
-  const errorNode: TranscriptNode | null = error
-    ? {
-        id: "transport-error",
-        type: "assistant-error",
-        text: error.message,
+  const streamingAssistantTextId = useMemo(() => {
+    if (!isThinking) {
+      return null;
+    }
+
+    for (let index = transcript.length - 1; index >= 0; index -= 1) {
+      const node = transcript[index];
+      if (node?.type === "assistant-text") {
+        return node.id;
       }
-    : null;
+    }
+
+    return null;
+  }, [isThinking, transcript]);
+  const errorNode: TranscriptNode | null = useMemo(
+    () =>
+      error
+        ? {
+            id: "transport-error",
+            type: "assistant-error",
+            text: error.message,
+          }
+        : null,
+    [error],
+  );
   const showWelcome = screenStartIndex === 0 || messages.length === 0;
+  const scrollEventKey = useMemo(
+    () =>
+      [
+        ...transcript.map((node) => {
+          switch (node.type) {
+            case "user-prompt":
+              return `${node.id}:${node.type}:${node.text.length}`;
+            case "user-command":
+              return `${node.id}:${node.type}:${node.command.length}`;
+            case "assistant-text":
+            case "assistant-thinking":
+            case "assistant-error":
+            case "tip":
+              return `${node.id}:${node.type}:${node.text.length}`;
+            case "tool-summary":
+              return `${node.id}:${node.type}:${node.state}:${node.detail ?? ""}`;
+            case "tool-detail":
+              return `${node.id}:${node.type}:${node.status}:${node.text.length}`;
+            case "local-panel":
+              return `${node.id}:${node.type}:${node.panel}`;
+          }
+        }),
+        `spinner:${showSpinner ? 1 : 0}`,
+        errorNode ? `error:${errorNode.text.length}` : "error:0",
+      ].join("|"),
+    [errorNode, showSpinner, transcript],
+  );
+
+  useEffect(() => {
+    if (!followOutput) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      scrollToBottom();
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [followOutput, scrollEventKey]);
   const promptInput = (
     <InputArea
       disabled={false}
@@ -918,6 +963,41 @@ export function Terminal() {
       showShortcuts={effectiveShowShortcuts}
     />
   );
+  const transcriptContent = (
+    <>
+      {showWelcome ? <Welcome /> : null}
+
+      {transcript.map((node) => (
+        <Message
+          key={node.id}
+          node={node}
+          streaming={node.type === "assistant-text" && node.id === streamingAssistantTextId}
+        />
+      ))}
+
+      {showSpinner ? (
+        <div className="mt-2 flex items-baseline px-1">
+          <span className="w-4 shrink-0 text-cc-claude select-none">
+            {SPINNER_SEQUENCE[spinnerFrame]}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="text-cc-claude">
+              {SPINNER_MESSAGES[spinnerMessageIndex]}...
+            </span>
+            <span className="text-cc-secondary">
+              {" "}({spinnerElapsed}s)
+            </span>
+          </span>
+        </div>
+      ) : null}
+
+      {errorNode ? <Message node={errorNode} /> : null}
+
+      <div className="mt-[1.2em]">
+        {promptInput}
+      </div>
+    </>
+  );
 
   return (
     <div
@@ -930,37 +1010,10 @@ export function Terminal() {
         onWheelCapture={handleWheelCapture}
         onTouchStartCapture={handleTouchStartCapture}
         onTouchMoveCapture={handleTouchMoveCapture}
-        className="min-h-0 flex-1 overflow-y-auto"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
-        <div className="flex min-h-full flex-col px-[1px] pt-[1px] pb-3">
-          {showWelcome ? <Welcome /> : null}
-
-          {transcript.map((node) => (
-            <Message key={node.id} node={node} />
-          ))}
-
-          {showSpinner ? (
-            <div className="mt-2 flex items-baseline px-1">
-              <span className="w-4 shrink-0 text-cc-claude select-none">
-                {SPINNER_SEQUENCE[spinnerFrame]}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="text-cc-claude">
-                  {SPINNER_MESSAGES[spinnerMessageIndex]}...
-                </span>
-                <span className="text-cc-secondary">
-                  {" "}({spinnerElapsed}s)
-                </span>
-              </span>
-            </div>
-          ) : null}
-
-          {errorNode ? <Message node={errorNode} /> : null}
-
-          <div aria-hidden="true" className="h-[1.2em]" />
-
-          {promptInput}
-
+        <div className="flex min-h-full flex-col px-[1px] pt-[1px] pb-4">
+          {transcriptContent}
         </div>
       </div>
     </div>

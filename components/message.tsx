@@ -4,7 +4,13 @@ import { Markdown } from "./markdown";
 import { HelpPanel } from "./help-panel";
 import type { TranscriptNode } from "@/lib/transcript";
 
-export function Message({ node }: { node: TranscriptNode }) {
+export function Message({
+  node,
+  streaming = false,
+}: {
+  node: TranscriptNode;
+  streaming?: boolean;
+}) {
   switch (node.type) {
     case "user-prompt":
       return (
@@ -35,7 +41,7 @@ export function Message({ node }: { node: TranscriptNode }) {
         <div className="mt-2 flex items-baseline px-1">
           <span className="w-4 shrink-0 select-none text-cc-text">●</span>
           <div className="min-w-0 max-w-full flex-1">
-            <Markdown content={node.text} />
+            <Markdown content={node.text} streaming={streaming} />
           </div>
         </div>
       );
