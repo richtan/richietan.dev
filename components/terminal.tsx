@@ -2,6 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
+import { hackNerdMono } from "@/app/fonts";
 import { Welcome } from "./welcome";
 import { Message } from "./message";
 import { InputArea } from "./input-area";
@@ -197,7 +198,6 @@ export function Terminal() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [autoScroll, setAutoScroll] = useState(true);
   const [input, setInput] = useState("");
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [extendedThinking, setExtendedThinking] = useState(false);
@@ -213,6 +213,8 @@ export function Terminal() {
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [spinnerElapsed, setSpinnerElapsed] = useState(0);
   const [spinnerMessageIndex, setSpinnerMessageIndex] = useState(0);
+  const followOutputRef = useRef(true);
+  const touchYRef = useRef<number | null>(null);
 
   const visibleMessages = useDeferredValue(messages.slice(screenStartIndex));
   const transcript = normalizeMessages(visibleMessages, { verboseOutput });
@@ -243,7 +245,7 @@ export function Terminal() {
   }
 
   useEffect(() => {
-    if (!autoScroll) {
+    if (!followOutputRef.current) {
       return;
     }
 
@@ -254,7 +256,7 @@ export function Terminal() {
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [autoScroll, transcript, status, error]);
+  }, [transcript, status, error]);
 
   useEffect(() => {
     if (status !== "submitted" && status !== "streaming") {
@@ -275,12 +277,37 @@ export function Terminal() {
     };
   }, [status]);
 
+  function isNearBottom(el: HTMLDivElement) {
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= AUTO_SCROLL_THRESHOLD;
+  }
+
   function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
-    const atBottom =
-      el.scrollHeight - el.scrollTop - el.clientHeight <= AUTO_SCROLL_THRESHOLD;
-    setAutoScroll(atBottom);
+    followOutputRef.current = isNearBottom(el);
+  }
+
+  function handleWheelCapture(event: React.WheelEvent<HTMLDivElement>) {
+    if (event.deltaY < 0) {
+      followOutputRef.current = false;
+    }
+  }
+
+  function handleTouchStartCapture(event: React.TouchEvent<HTMLDivElement>) {
+    touchYRef.current = event.touches[0]?.clientY ?? null;
+  }
+
+  function handleTouchMoveCapture(event: React.TouchEvent<HTMLDivElement>) {
+    const nextY = event.touches[0]?.clientY;
+    if (nextY === undefined) {
+      return;
+    }
+
+    if (touchYRef.current !== null && nextY > touchYRef.current) {
+      followOutputRef.current = false;
+    }
+
+    touchYRef.current = nextY;
   }
 
   function focusPrompt() {
@@ -326,7 +353,7 @@ export function Terminal() {
     setSpinnerFrame(0);
     setSpinnerMessageIndex((index) => (index + 1) % SPINNER_MESSAGES.length);
     clearError();
-    setAutoScroll(true);
+    followOutputRef.current = true;
     scrollToBottom("auto");
     setInput("");
     setShowShortcuts(false);
@@ -400,7 +427,7 @@ export function Terminal() {
 
   async function clearConversation() {
     clearError();
-    setAutoScroll(true);
+    followOutputRef.current = true;
     setInput("");
     setHistory([]);
     setHistoryIndex(null);
@@ -710,15 +737,18 @@ export function Terminal() {
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col bg-cc-bg text-[13px] leading-[1.2] text-cc-text"
+      className={`${hackNerdMono.className} cc-terminal-font flex h-full min-h-0 flex-col bg-cc-bg text-[12px] leading-[1.2] text-cc-text`}
       onClick={handleTerminalClick}
     >
       <div
         ref={scrollRef}
         onScroll={handleScroll}
+        onWheelCapture={handleWheelCapture}
+        onTouchStartCapture={handleTouchStartCapture}
+        onTouchMoveCapture={handleTouchMoveCapture}
         className="min-h-0 flex-1 overflow-y-auto"
       >
-        <div className="flex min-h-full flex-col px-[1px] pt-[1px] pb-2">
+        <div className="flex min-h-full flex-col px-[1px] pt-[1px] pb-3">
           {showWelcome ? <Welcome /> : null}
 
           {transcript.map((node) => (

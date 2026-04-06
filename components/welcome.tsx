@@ -30,8 +30,9 @@ const HEADER_LINES = [
 export function Welcome() {
   return (
     <div className="select-none px-1 pt-1 pb-2">
-      <pre className="m-0 whitespace-pre text-[#74c169]">
-        ↳ claude
+      <pre className="m-0 whitespace-pre">
+        <span className="text-[#74c169]">➜</span>
+        <span className="text-cc-text"> claude</span>
       </pre>
 
       <pre className="mt-1 m-0 whitespace-pre text-cc-text">
