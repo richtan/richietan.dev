@@ -8,23 +8,21 @@ export function Message({ node }: { node: TranscriptNode }) {
   switch (node.type) {
     case "user-prompt":
       return (
-        <div className="mt-2 bg-cc-rail/95 text-[15px] leading-6 text-cc-text">
-          <div className="flex min-h-[28px] items-start px-1">
-            <span className="w-4 shrink-0 text-cc-secondary select-none">{">"}</span>
-            <div className="min-w-0 flex-1 whitespace-pre-wrap font-medium">
-              {node.text}
-            </div>
-          </div>
+        <div className="mt-2 flex items-start px-1 text-[15px] leading-6 text-cc-text">
+          <span className="w-4 shrink-0 text-cc-secondary select-none">{">"}</span>
+          <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words">
+            {node.text}
+          </pre>
         </div>
       );
 
     case "user-command":
       return (
-        <div className="mt-2 bg-cc-rail/95 text-[15px] leading-6 text-cc-text">
-          <div className="flex min-h-[28px] items-start px-1">
-            <span className="w-4 shrink-0 text-cc-secondary select-none">{">"}</span>
-            <div className="min-w-0 flex-1 font-medium">{node.command}</div>
-          </div>
+        <div className="mt-2 flex items-start px-1 text-[15px] leading-6 text-cc-text">
+          <span className="w-4 shrink-0 text-cc-secondary select-none">{">"}</span>
+          <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words">
+            {node.command}
+          </pre>
         </div>
       );
 
@@ -42,7 +40,7 @@ export function Message({ node }: { node: TranscriptNode }) {
       return (
         <div className="mt-3 px-1">
           <div className="flex">
-            <span className="w-4 shrink-0 text-cc-claude select-none">✦</span>
+            <span className="w-4 shrink-0 text-cc-claude select-none">✻</span>
             <span className="text-cc-claude">Thinking...</span>
           </div>
           {node.text.trim() ? (

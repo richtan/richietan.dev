@@ -1,102 +1,119 @@
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import type { Components } from "react-markdown";
+function stripInlineMarkdown(text: string) {
+  return text
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "$1 <$2>")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/~~([^~]+)~~/g, "$1");
+}
 
-/**
- * Markdown rendering that matches Claude Code CLI style:
- * - h1: bold + italic + underline
- * - h2: bold
- * - h3+: bold + dim
- * - inline code: blue
- * - blockquote: dim + italic
- * - links: blue
- * - lists: `- ` with 2-space indent per depth
- */
-const components: Components = {
-  p: ({ children }) => <p className="mb-1.5 last:mb-0">{children}</p>,
-  strong: ({ children }) => (
-    <strong className="font-bold">{children}</strong>
-  ),
-  em: ({ children }) => <em className="italic">{children}</em>,
-  code: ({ className, children }) => {
-    const isBlock = /language-/.test(className || "");
-    if (isBlock) {
-      return (
-        <code className={`block overflow-x-auto py-1 text-[13px] text-cc-text ${className}`}>
-          {children}
-        </code>
-      );
+function splitTableRow(line: string) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => stripInlineMarkdown(cell.trim()));
+}
+
+function isTableSeparator(line: string) {
+  const trimmed = line.trim();
+  return /^(?:\|?\s*:?-+:?\s*)+\|?$/.test(trimmed) && trimmed.includes("-");
+}
+
+function formatTable(rows: string[][]) {
+  const widths = rows.reduce<number[]>((current, row) => {
+    row.forEach((cell, index) => {
+      current[index] = Math.max(current[index] ?? 0, cell.length);
+    });
+    return current;
+  }, []);
+
+  const border = `+${widths.map((width) => "-".repeat(width + 2)).join("+")}+`;
+  const formatRow = (row: string[]) =>
+    `|${row
+      .map((cell, index) => ` ${cell.padEnd(widths[index] ?? cell.length)} `)
+      .join("|")}|`;
+
+  return [
+    border,
+    formatRow(rows[0] ?? []),
+    border,
+    ...rows.slice(1).map(formatRow),
+    border,
+  ].join("\n");
+}
+
+function renderMarkdownToText(markdown: string) {
+  const lines = markdown.replace(/\r/g, "").split("\n");
+  const output: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+
+    if (line.startsWith("```")) {
+      const codeLines: string[] = [];
+      index += 1;
+      while (index < lines.length && !lines[index]?.startsWith("```")) {
+        codeLines.push(lines[index] ?? "");
+        index += 1;
+      }
+      output.push(codeLines.join("\n"));
+      continue;
     }
-    return (
-      <code className="text-blue-400">{children}</code>
-    );
-  },
-  pre: ({ children }) => (
-    <pre className="my-2 overflow-x-auto whitespace-pre-wrap break-words">{children}</pre>
-  ),
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      className="text-blue-400"
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      {children}
-    </a>
-  ),
-  ul: ({ children }) => <ul className="mb-1.5 space-y-0.5">{children}</ul>,
-  ol: ({ children }) => (
-    <ol className="mb-1.5 list-decimal space-y-0.5 pl-5">{children}</ol>
-  ),
-  li: ({ children }) => (
-    <li className="flex min-w-0">
-      <span className="mr-2 shrink-0 text-cc-secondary select-none">-</span>
-      <span className="min-w-0">{children}</span>
-    </li>
-  ),
-  h1: ({ children }) => (
-    <h1 className="mb-2 font-bold">{children}</h1>
-  ),
-  h2: ({ children }) => (
-    <h2 className="mb-2 font-bold">{children}</h2>
-  ),
-  h3: ({ children }) => (
-    <h3 className="mb-1.5 font-bold text-cc-secondary">{children}</h3>
-  ),
-  h4: ({ children }) => (
-    <h4 className="mb-1.5 font-bold text-cc-secondary">{children}</h4>
-  ),
-  hr: () => <div className="my-2 border-t border-cc-border/60" />,
-  blockquote: ({ children }) => (
-    <blockquote className="border-l border-cc-border/50 pl-3 text-cc-secondary italic">
-      {children}
-    </blockquote>
-  ),
-  table: ({ children }) => (
-    <div className="my-3 overflow-x-auto">
-      <table className="w-max min-w-[38rem] border-collapse text-[13px] leading-5">
-        {children}
-      </table>
-    </div>
-  ),
-  th: ({ children }) => (
-    <th className="border border-cc-border/80 px-3 py-1.5 text-left font-semibold text-cc-text">
-      {children}
-    </th>
-  ),
-  td: ({ children }) => (
-    <td className="border border-cc-border/80 px-3 py-1.5 align-top text-cc-text">
-      {children}
-    </td>
-  ),
-};
+
+    const nextLine = lines[index + 1] ?? "";
+    if (line.includes("|") && isTableSeparator(nextLine)) {
+      const rows: string[][] = [];
+      rows.push(splitTableRow(line));
+      index += 2;
+      while (index < lines.length && (lines[index] ?? "").includes("|")) {
+        rows.push(splitTableRow(lines[index] ?? ""));
+        index += 1;
+      }
+      index -= 1;
+      output.push(formatTable(rows));
+      continue;
+    }
+
+    if (/^\s*[-*_]{3,}\s*$/.test(line)) {
+      output.push("────────────────────────────────────────────────");
+      continue;
+    }
+
+    if (/^\s*#{1,6}\s+/.test(line)) {
+      output.push(stripInlineMarkdown(line.replace(/^\s*#{1,6}\s+/, "")));
+      continue;
+    }
+
+    if (/^\s*>\s?/.test(line)) {
+      output.push(`> ${stripInlineMarkdown(line.replace(/^\s*>\s?/, ""))}`);
+      continue;
+    }
+
+    if (/^\s*[-*+]\s+/.test(line)) {
+      output.push(`- ${stripInlineMarkdown(line.replace(/^\s*[-*+]\s+/, ""))}`);
+      continue;
+    }
+
+    if (/^\s*\d+\.\s+/.test(line)) {
+      output.push(stripInlineMarkdown(line));
+      continue;
+    }
+
+    output.push(stripInlineMarkdown(line));
+  }
+
+  return output.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+}
 
 export function Markdown({ content }: { content: string }) {
   return (
-    <div className="min-w-0 text-[15px] leading-[1.25]">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {content}
-      </ReactMarkdown>
-    </div>
+    <pre className="m-0 min-w-0 whitespace-pre-wrap break-words text-[15px] leading-[1.25] text-cc-text">
+      {renderMarkdownToText(content)}
+    </pre>
   );
 }

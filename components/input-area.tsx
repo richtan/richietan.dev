@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SLASH_COMMANDS } from "@/lib/constants";
 
 interface HistorySearchState {
@@ -26,6 +26,10 @@ interface InputAreaProps {
   historySearch: HistorySearchState;
 }
 
+function padRight(value: string, width: number) {
+  return value + " ".repeat(Math.max(0, width - value.length));
+}
+
 export function InputArea({
   disabled,
   isLoading,
@@ -40,15 +44,7 @@ export function InputArea({
   verboseOutput,
   historySearch,
 }: InputAreaProps) {
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) {
-      return;
-    }
-
-    textarea.style.height = "auto";
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  }, [input, textareaRef]);
+  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
     if (!disabled) {
@@ -56,40 +52,62 @@ export function InputArea({
     }
   }, [disabled, textareaRef]);
 
+  const suggestionWidth = useMemo(() => {
+    const names = suggestions.map((command) => `/${command.name}`);
+    const maxWidth = names.reduce(
+      (width, name) => Math.max(width, name.length),
+      12,
+    );
+    return maxWidth + 2;
+  }, [suggestions]);
+
+  const promptBody = input || "";
+  const showPlaceholder = input.length === 0;
+  const showCaret = isFocused && !disabled && !isLoading;
+  const footerText = isLoading
+    ? "esc to interrupt"
+    : `? for shortcuts · / for commands · thinking ${extendedThinking ? "on" : "off"} · verbose ${verboseOutput ? "on" : "off"}`;
+
   return (
-    <div className="mt-2">
+    <div className="mt-2 px-1">
       {historySearch.open ? (
-        <div className="mb-2 px-1 text-[13px] leading-5 text-cc-secondary">
+        <pre className="mb-1.5 whitespace-pre-wrap break-words text-[13px] leading-5 text-cc-secondary">
           <span className="text-cc-permission">(reverse-i-search)</span>{" "}
           <span className="text-cc-text">{historySearch.query || "_"}</span>
-          {historySearch.match ? (
-            <>
-              {": "}
-              <span className="text-cc-text">{historySearch.match}</span>
-              <span className="text-cc-secondary/70">
-                {" "}
-                ({historySearch.current}/{historySearch.total})
-              </span>
-            </>
-          ) : (
-            <span className="text-cc-error">: no matches</span>
-          )}
-        </div>
+          {historySearch.match
+            ? `: ${historySearch.match} (${historySearch.current}/${historySearch.total})`
+            : ": no matches"}
+        </pre>
       ) : null}
 
-      <div className="border-y border-cc-border/85">
-        <div className="flex items-start bg-cc-rail/95">
-          <div className="flex min-h-[36px] w-6 shrink-0 items-center justify-center text-cc-secondary">
-            {">"}
-          </div>
+      <div
+        className="relative cursor-text"
+        onMouseDown={(event) => {
+          if (event.target !== textareaRef.current) {
+            event.preventDefault();
+            textareaRef.current?.focus();
+          }
+        }}
+      >
+        <div className="flex items-start text-[15px] leading-6">
+          <div className="w-4 shrink-0 text-cc-secondary">{">"}</div>
+          <pre className="m-0 min-h-[24px] min-w-0 flex-1 whitespace-pre-wrap break-words text-cc-text">
+            {showPlaceholder ? (
+              <span className="text-cc-secondary/55">{placeholder}</span>
+            ) : (
+              promptBody || " "
+            )}
+            {showCaret ? <span className="animate-caret-pulse">█</span> : null}
+          </pre>
           <textarea
             ref={textareaRef}
             value={input}
             onChange={(event) => onInputChange(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={placeholder}
-            className="min-h-[36px] max-h-[280px] flex-1 resize-none bg-transparent py-[5px] pr-2 text-[15px] leading-6 text-cc-text outline-none placeholder:text-cc-secondary/55"
-            rows={1}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            className="absolute inset-0 h-full w-full resize-none overflow-hidden bg-transparent opacity-0 outline-none"
+            rows={Math.max(1, input.split("\n").length)}
             disabled={disabled}
             spellCheck={false}
             autoComplete="off"
@@ -98,43 +116,25 @@ export function InputArea({
       </div>
 
       {suggestions.length > 0 ? (
-        <div className="px-1 pt-2">
-          <div className="space-y-0.5 text-[13px] leading-5">
-            {suggestions.map((command, index) => {
-              const selected = index === selectedSuggestion;
-              return (
-                <div
-                  key={command.name}
-                  className={`grid gap-3 md:grid-cols-[minmax(0,14rem)_1fr] ${
-                    selected ? "text-cc-suggestion" : "text-cc-secondary/55"
-                  }`}
-                >
-                  <div>
-                    /{command.name}
-                  </div>
-                  <div>{command.description}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <pre className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-5">
+          {suggestions.map((command, index) => {
+            const selected = index === selectedSuggestion;
+            const line = `${padRight(`/${command.name}`, suggestionWidth)}${command.description}`;
+            return (
+              <span
+                key={command.name}
+                className={selected ? "text-cc-suggestion" : "text-cc-secondary/60"}
+              >
+                {line}
+                {"\n"}
+              </span>
+            );
+          })}
+        </pre>
       ) : (
-        <div className="flex flex-col gap-1 px-1 pt-2 text-[12px] leading-4 text-cc-secondary/70 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            {isLoading ? (
-              <span>esc to interrupt</span>
-            ) : (
-              <span>? for shortcuts</span>
-            )}
-          </div>
-          {!isLoading ? (
-            <div>
-              <span>/ for commands</span>
-              <span> · thinking {extendedThinking ? "on" : "off"}</span>
-              <span> · verbose {verboseOutput ? "on" : "off"}</span>
-            </div>
-          ) : null}
-        </div>
+        <pre className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-4 text-cc-secondary/70">
+          {footerText}
+        </pre>
       )}
     </div>
   );
