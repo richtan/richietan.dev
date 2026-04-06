@@ -28,21 +28,51 @@ const SPINNER_MESSAGES = [
   "Cerebrating",
   "Churning",
   "Clauding",
+  "Coalescing",
   "Cogitating",
   "Computing",
+  "Conjuring",
   "Considering",
+  "Cooking",
   "Crafting",
+  "Creating",
+  "Crunching",
+  "Deliberating",
+  "Determining",
+  "Doing",
+  "Effecting",
+  "Finagling",
+  "Forging",
+  "Forming",
   "Generating",
-  "Hullaballooing",
+  "Hatching",
+  "Herding",
+  "Honking",
+  "Hustling",
+  "Ideating",
+  "Inferring",
+  "Manifesting",
+  "Marinating",
+  "Moseying",
   "Mulling",
+  "Mustering",
+  "Musing",
   "Noodling",
+  "Percolating",
   "Pondering",
   "Processing",
+  "Puttering",
   "Reticulating",
   "Ruminating",
+  "Schlepping",
+  "Shucking",
+  "Simmering",
+  "Smooshing",
+  "Spinning",
   "Stewing",
   "Synthesizing",
   "Thinking",
+  "Transmuting",
   "Vibing",
   "Working",
 ];
@@ -595,6 +625,31 @@ export function Terminal() {
       }
     : null;
   const showWelcome = screenStartIndex === 0 || messages.length === 0;
+  const promptInput = (
+    <InputArea
+      disabled={false}
+      isLoading={isThinking}
+      input={input}
+      onInputChange={(value) => {
+        setInput(value);
+        setSelectedSuggestion(0);
+        if (error) {
+          clearError();
+        }
+      }}
+      onKeyDown={handleKeyDown}
+      selectedSuggestion={selectedSuggestion}
+      suggestions={suggestions}
+      textareaRef={textareaRef}
+      historySearch={{
+        open: historySearchOpen,
+        query: historySearchQuery,
+        match: activeHistoryMatch,
+        current: historyMatches.length === 0 ? 0 : historySearchIndex + 1,
+        total: historyMatches.length,
+      }}
+    />
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-cc-bg text-[13px] leading-[1.2] text-cc-text">
@@ -628,33 +683,11 @@ export function Terminal() {
 
           {errorNode ? <Message node={errorNode} /> : null}
 
-        </div>
-      </div>
+          <div aria-hidden="true" className="h-[1.2em]" />
 
-      <div className="shrink-0 px-[1px] pb-2">
-        <InputArea
-          disabled={false}
-          isLoading={isThinking}
-          input={input}
-          onInputChange={(value) => {
-            setInput(value);
-            setSelectedSuggestion(0);
-            if (error) {
-              clearError();
-            }
-          }}
-          onKeyDown={handleKeyDown}
-          selectedSuggestion={selectedSuggestion}
-          suggestions={suggestions}
-          textareaRef={textareaRef}
-          historySearch={{
-            open: historySearchOpen,
-            query: historySearchQuery,
-            match: activeHistoryMatch,
-            current: historyMatches.length === 0 ? 0 : historySearchIndex + 1,
-            total: historyMatches.length,
-          }}
-        />
+          {promptInput}
+
+        </div>
       </div>
     </div>
   );
