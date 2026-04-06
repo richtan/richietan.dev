@@ -4,11 +4,13 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  /* Claude Code Dark Theme */
   --color-cc-claude: #D97757;
-  --color-cc-text: #FFFFFF;
-  --color-cc-secondary: #999999;
-  --color-cc-border: #888888;
+  --color-cc-bg: #161a1f;
+  --color-cc-panel: #1b2026;
+  --color-cc-rail: #3a3a3b;
+  --color-cc-text: #f1f1f2;
+  --color-cc-secondary: #9a9a9d;
+  --color-cc-border: #7e8288;
   --color-cc-bash: #fd5db1;
   --color-cc-permission: #b1b9f9;
   --color-cc-suggestion: #b1b9f9;
@@ -21,11 +23,16 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: #000;
-  color: #fff;
+  background: var(--color-cc-bg);
+  color: var(--color-cc-text);
 }
 
-/* Terminal scrollbar */
+body {
+  font-family: var(--font-geist-mono), monospace;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -40,12 +47,21 @@ body {
   background: #555;
 }
 
-/* Selection */
 ::selection {
   background: rgba(217, 119, 87, 0.3);
 }
 
-/* Spinner character animation */
+@keyframes windowOpen {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @keyframes blink-dot {
   0%,
   49% {
@@ -58,16 +74,4 @@ body {
 }
 .animate-blink-dot {
   animation: blink-dot 600ms step-end infinite;
-}
-
-/* macOS window open animation */
-@keyframes windowOpen {
-  from {
-    transform: scale(0.95);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
 }

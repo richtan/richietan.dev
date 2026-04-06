@@ -1,148 +1,650 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
-import type { UIMessage, ChatStatus } from "ai";
+import { useChat } from "@ai-sdk/react";
+import { startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
 import { Welcome } from "./welcome";
 import { Message } from "./message";
-import { ThinkingIndicator } from "./thinking";
 import { InputArea } from "./input-area";
-import { Markdown } from "./markdown";
-import { SLASH_COMMANDS } from "@/lib/constants";
+import {
+  CLAUDE_CWD,
+  getSlashCommand,
+  SLASH_COMMANDS,
+} from "@/lib/constants";
+import {
+  AppMessage,
+  createAssistantPanelMessage,
+  createAssistantTextMessage,
+  createUserTextMessage,
+  normalizeMessages,
+  type TranscriptNode,
+} from "@/lib/transcript";
 
-interface TerminalProps {
-  messages: UIMessage[];
-  status: ChatStatus;
-  sendMessage: (message: { text: string }) => void;
-  setMessages: (
-    messages: UIMessage[] | ((messages: UIMessage[]) => UIMessage[]),
-  ) => void;
+const SPINNER_CHARS = ["·", "✢", "✳", "∗", "✻", "✽"];
+const SPINNER_SEQUENCE = [...SPINNER_CHARS, ...[...SPINNER_CHARS].reverse()];
+const SPINNER_MESSAGES = [
+  "Accomplishing",
+  "Actioning",
+  "Actualizing",
+  "Baking",
+  "Brewing",
+  "Calculating",
+  "Cerebrating",
+  "Churning",
+  "Clauding",
+  "Cogitating",
+  "Computing",
+  "Considering",
+  "Crafting",
+  "Generating",
+  "Hullaballooing",
+  "Mulling",
+  "Noodling",
+  "Pondering",
+  "Processing",
+  "Reticulating",
+  "Ruminating",
+  "Stewing",
+  "Synthesizing",
+  "Thinking",
+  "Vibing",
+  "Working",
+];
+
+const EXAMPLE_PROMPTS = [
+  'Try "tell me about Richie"',
+  'Try "show me Richie\'s resume"',
+  'Try "what projects has Richie built?"',
+  'Try "how can I contact Richie?"',
+];
+
+const HISTORY_KEY = `richietan.dev::claude-code::history::${CLAUDE_CWD}`;
+
+function getStoredHistory() {
+  if (typeof window === "undefined") {
+    return [] as string[];
+  }
+
+  try {
+    const stored = localStorage.getItem(HISTORY_KEY);
+    if (!stored) {
+      return [] as string[];
+    }
+
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === "string")
+      : [];
+  } catch {
+    return [] as string[];
+  }
 }
 
-interface LocalMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
+function setCursorPosition(
+  textarea: HTMLTextAreaElement | null,
+  position: number,
+) {
+  if (!textarea) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    textarea.selectionStart = position;
+    textarea.selectionEnd = position;
+  });
 }
 
-export function Terminal({
-  messages,
-  status,
-  sendMessage,
-  setMessages,
-}: TerminalProps) {
+function replaceSelection(
+  textarea: HTMLTextAreaElement | null,
+  value: string,
+  setInput: (value: string) => void,
+  replacement: string,
+  removePreviousChar = false,
+) {
+  if (!textarea) {
+    return;
+  }
+
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const safeStart = removePreviousChar ? Math.max(0, start - 1) : start;
+  const nextValue = `${value.slice(0, safeStart)}${replacement}${value.slice(end)}`;
+  const nextCursor = safeStart + replacement.length;
+  setInput(nextValue);
+  setCursorPosition(textarea, nextCursor);
+}
+
+function getHistoryMatches(history: string[], query: string) {
+  if (!query) {
+    return [...history].reverse();
+  }
+
+  return history
+    .filter((entry) => entry.toLowerCase().includes(query.toLowerCase()))
+    .reverse();
+}
+
+function isCaretOnFirstLine(textarea: HTMLTextAreaElement | null, value: string) {
+  if (!textarea) {
+    return true;
+  }
+  return !value.slice(0, textarea.selectionStart).includes("\n");
+}
+
+function isCaretOnLastLine(textarea: HTMLTextAreaElement | null, value: string) {
+  if (!textarea) {
+    return true;
+  }
+  return !value.slice(textarea.selectionEnd).includes("\n");
+}
+
+function createLocalError(text: string) {
+  return createAssistantTextMessage(text, { localError: true });
+}
+
+export function Terminal() {
+  const {
+    messages,
+    status,
+    error,
+    sendMessage,
+    setMessages,
+    stop,
+    clearError,
+  } = useChat<AppMessage>({
+    experimental_throttle: 16,
+  });
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [localMessages, setLocalMessages] = useState<LocalMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [placeholder] = useState(EXAMPLE_PROMPTS[0]!);
+  const [selectedSuggestion, setSelectedSuggestion] = useState(0);
+  const [extendedThinking, setExtendedThinking] = useState(true);
+  const [verboseOutput, setVerboseOutput] = useState(false);
+  const [screenStartIndex, setScreenStartIndex] = useState(0);
+  const [history, setHistory] = useState<string[]>(getStoredHistory);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const [historyDraft, setHistoryDraft] = useState("");
+  const [historySearchOpen, setHistorySearchOpen] = useState(false);
+  const [historySearchQuery, setHistorySearchQuery] = useState("");
+  const [historySearchIndex, setHistorySearchIndex] = useState(0);
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
+  const [spinnerElapsed, setSpinnerElapsed] = useState(0);
+  const [spinnerMessageIndex, setSpinnerMessageIndex] = useState(0);
 
-  // Auto-scroll to bottom on new content
+  const visibleMessages = useDeferredValue(messages.slice(screenStartIndex));
+  const transcript = normalizeMessages(visibleMessages, { verboseOutput });
+  const suggestions = input.startsWith("/")
+    ? SLASH_COMMANDS.filter((command) =>
+        command.name.startsWith(input.slice(1).toLowerCase()),
+      )
+    : [];
+  const historyMatches = getHistoryMatches(history, historySearchQuery);
+  const activeHistoryMatch = historyMatches[historySearchIndex] ?? null;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-100)));
+  }, [history]);
+
   useEffect(() => {
     if (autoScroll && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, status, autoScroll, localMessages]);
+  }, [autoScroll, transcript.length, status]);
 
-  const handleScroll = useCallback(() => {
+  useEffect(() => {
+    if (status !== "submitted" && status !== "streaming") {
+      return;
+    }
+
+    const frameTimer = setInterval(() => {
+      setSpinnerFrame((frame) => (frame + 1) % SPINNER_SEQUENCE.length);
+    }, 120);
+
+    const elapsedTimer = setInterval(() => {
+      setSpinnerElapsed((value) => value + 1);
+    }, 1000);
+
+    return () => {
+      clearInterval(frameTimer);
+      clearInterval(elapsedTimer);
+    };
+  }, [status]);
+
+  function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
     setAutoScroll(atBottom);
-  }, []);
+  }
 
-  const handleSend = useCallback(
-    (text: string) => {
-      // Handle /help locally
-      if (text === "/help") {
-        const helpText = SLASH_COMMANDS.map(
-          (cmd) => `  **${cmd.name}**  ${cmd.description}`,
-        ).join("\n");
-        setLocalMessages((prev) => [
-          ...prev,
-          { id: `lq-${Date.now()}`, role: "user", content: "/help" },
-          {
-            id: `la-${Date.now()}`,
-            role: "assistant",
-            content: `Available commands:\n\n${helpText}\n\nOr just ask me anything about Richie.`,
-          },
+  function pushHistoryEntry(value: string) {
+    setHistory((current) => {
+      const next = current.filter((entry) => entry !== value);
+      next.push(value);
+      return next.slice(-100);
+    });
+    setHistoryIndex(null);
+    setHistoryDraft("");
+  }
+
+  function appendLocalMessages(nextMessages: AppMessage[]) {
+    startTransition(() => {
+      setMessages((current) => [...current, ...nextMessages]);
+    });
+  }
+
+  async function submitText(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed || status === "submitted" || status === "streaming") {
+      return;
+    }
+
+    setSpinnerElapsed(0);
+    setSpinnerFrame(0);
+    setSpinnerMessageIndex((index) => (index + 1) % SPINNER_MESSAGES.length);
+    clearError();
+    setInput("");
+    setSelectedSuggestion(0);
+    setHistorySearchOpen(false);
+    setHistorySearchQuery("");
+    setHistorySearchIndex(0);
+    pushHistoryEntry(trimmed);
+
+    if (trimmed === "?") {
+      appendLocalMessages([
+        createUserTextMessage(trimmed),
+        createAssistantPanelMessage("help"),
+      ]);
+      return;
+    }
+
+    if (trimmed.startsWith("/")) {
+      const [name] = trimmed.slice(1).split(/\s+/, 1);
+      const command = getSlashCommand(name ?? "");
+
+      if (!command) {
+        appendLocalMessages([
+          createUserTextMessage(trimmed),
+          createLocalError(`Unknown command: ${trimmed}`),
         ]);
         return;
       }
 
-      // Map slash commands to descriptive prompts
-      const commandMap: Record<string, string> = {
-        resume: "Show me Richie's resume and work experience.",
-        projects: "What projects has Richie built?",
-        skills: "What are Richie's technical skills?",
-        contact: "How can I contact Richie?",
-      };
+      if (command.kind === "local") {
+        if (command.name === "clear") {
+          await clearConversation();
+          return;
+        }
 
-      sendMessage({ text: commandMap[text] || text });
-    },
-    [sendMessage],
-  );
+        if (command.name === "help") {
+          appendLocalMessages([
+            createUserTextMessage(trimmed),
+            createAssistantPanelMessage("help"),
+          ]);
+          return;
+        }
+      }
 
-  const handleClear = useCallback(() => {
-    setMessages([]);
-    setLocalMessages([]);
-  }, [setMessages]);
+      await sendMessage(
+        { text: trimmed },
+        {
+          body: {
+            extendedThinking,
+            verboseOutput,
+            commandContext: {
+              source: "slash",
+              commandName: command.name,
+            },
+          },
+        },
+      );
+      return;
+    }
+
+    await sendMessage(
+      { text: trimmed },
+      {
+        body: {
+          extendedThinking,
+          verboseOutput,
+          commandContext: {
+            source: "prompt",
+          },
+        },
+      },
+    );
+  }
+
+  async function clearConversation() {
+    clearError();
+    setInput("");
+    setHistory([]);
+    setHistoryIndex(null);
+    setHistoryDraft("");
+    setScreenStartIndex(0);
+    startTransition(() => {
+      setMessages([]);
+    });
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(HISTORY_KEY);
+    }
+  }
+
+  async function submitCurrentInput() {
+    await submitText(input);
+  }
+
+  async function handleSubmitSuggestion() {
+    const suggestion = suggestions[selectedSuggestion];
+    if (!suggestion) {
+      return;
+    }
+
+    const nextValue = `/${suggestion.name}`;
+    await submitText(nextValue);
+  }
+
+  function navigateHistory(direction: "up" | "down") {
+    if (history.length === 0) {
+      return;
+    }
+
+    if (historyIndex === null) {
+      if (direction === "down") {
+        return;
+      }
+      setHistoryDraft(input);
+      const nextIndex = history.length - 1;
+      setHistoryIndex(nextIndex);
+      setInput(history[nextIndex] ?? "");
+      setCursorPosition(textareaRef.current, (history[nextIndex] ?? "").length);
+      return;
+    }
+
+    if (direction === "up") {
+      const nextIndex = Math.max(0, historyIndex - 1);
+      setHistoryIndex(nextIndex);
+      setInput(history[nextIndex] ?? "");
+      setCursorPosition(textareaRef.current, (history[nextIndex] ?? "").length);
+      return;
+    }
+
+    const nextIndex = historyIndex + 1;
+    if (nextIndex >= history.length) {
+      setHistoryIndex(null);
+      setInput(historyDraft);
+      setCursorPosition(textareaRef.current, historyDraft.length);
+      return;
+    }
+
+    setHistoryIndex(nextIndex);
+    setInput(history[nextIndex] ?? "");
+    setCursorPosition(textareaRef.current, (history[nextIndex] ?? "").length);
+  }
+
+  function toggleHistorySearch() {
+    if (!historySearchOpen) {
+      setHistorySearchOpen(true);
+      setHistorySearchQuery("");
+      setHistorySearchIndex(0);
+      return;
+    }
+
+    if (historyMatches.length > 0) {
+      setHistorySearchIndex((index) =>
+        Math.min(index + 1, historyMatches.length - 1),
+      );
+    }
+  }
+
+  async function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (historySearchOpen) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setHistorySearchOpen(false);
+        setHistorySearchQuery("");
+        setHistorySearchIndex(0);
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        if (activeHistoryMatch) {
+          setInput(activeHistoryMatch);
+          setCursorPosition(textareaRef.current, activeHistoryMatch.length);
+        }
+        setHistorySearchOpen(false);
+        return;
+      }
+
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        setHistorySearchQuery((query) => query.slice(0, -1));
+        setHistorySearchIndex(0);
+        return;
+      }
+
+      if (event.ctrlKey && event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        toggleHistorySearch();
+        return;
+      }
+
+      if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key.length === 1) {
+        event.preventDefault();
+        setHistorySearchQuery((query) => query + event.key);
+        setHistorySearchIndex(0);
+      }
+      return;
+    }
+
+    if (event.ctrlKey && event.key.toLowerCase() === "c") {
+      if (status === "submitted" || status === "streaming") {
+        event.preventDefault();
+        await stop();
+      }
+      return;
+    }
+
+    if (event.key === "Escape" && (status === "submitted" || status === "streaming")) {
+      event.preventDefault();
+      await stop();
+      return;
+    }
+
+    if (event.ctrlKey && event.key.toLowerCase() === "l") {
+      event.preventDefault();
+      setScreenStartIndex(messages.length);
+      return;
+    }
+
+    if (event.ctrlKey && event.key.toLowerCase() === "r") {
+      event.preventDefault();
+      toggleHistorySearch();
+      return;
+    }
+
+    if (event.ctrlKey && event.key.toLowerCase() === "o") {
+      event.preventDefault();
+      setVerboseOutput((value) => !value);
+      return;
+    }
+
+    if (event.ctrlKey && event.key.toLowerCase() === "j") {
+      event.preventDefault();
+      replaceSelection(textareaRef.current, input, setInput, "\n");
+      return;
+    }
+
+    if (event.key === "ArrowDown" && suggestions.length > 0) {
+      event.preventDefault();
+      setSelectedSuggestion((index) => (index + 1) % suggestions.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp" && suggestions.length > 0) {
+      event.preventDefault();
+      setSelectedSuggestion((index) =>
+        index <= 0 ? suggestions.length - 1 : index - 1,
+      );
+      return;
+    }
+
+    if (event.key === "Tab" && suggestions.length > 0) {
+      event.preventDefault();
+      const suggestion = suggestions[selectedSuggestion];
+      if (!suggestion) {
+        return;
+      }
+      const nextValue = `/${suggestion.name}`;
+      setInput(nextValue);
+      setCursorPosition(textareaRef.current, nextValue.length);
+      return;
+    }
+
+    if (
+      event.key === "ArrowUp" &&
+      suggestions.length === 0 &&
+      isCaretOnFirstLine(textareaRef.current, input)
+    ) {
+      event.preventDefault();
+      navigateHistory("up");
+      return;
+    }
+
+    if (
+      event.key === "ArrowDown" &&
+      suggestions.length === 0 &&
+      isCaretOnLastLine(textareaRef.current, input)
+    ) {
+      event.preventDefault();
+      navigateHistory("down");
+      return;
+    }
+
+    if (
+      event.key === "Tab" &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      suggestions.length === 0
+    ) {
+      event.preventDefault();
+      setExtendedThinking((value) => !value);
+      return;
+    }
+
+    if (event.key === "Enter" && (event.shiftKey || event.altKey)) {
+      event.preventDefault();
+      replaceSelection(textareaRef.current, input, setInput, "\n");
+      return;
+    }
+
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      textareaRef.current &&
+      textareaRef.current.selectionStart === textareaRef.current.selectionEnd &&
+      input[Math.max(0, textareaRef.current.selectionStart - 1)] === "\\"
+    ) {
+      event.preventDefault();
+      replaceSelection(textareaRef.current, input, setInput, "\n", true);
+      return;
+    }
+
+    if (event.key === "Enter" && suggestions.length > 0) {
+      event.preventDefault();
+      await handleSubmitSuggestion();
+      return;
+    }
+
+    if (event.key === "Enter" && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
+      event.preventDefault();
+      await submitCurrentInput();
+    }
+  }
 
   const isThinking = status === "submitted" || status === "streaming";
-  const showSpinner =
-    isThinking &&
-    (messages.length === 0 ||
-      messages[messages.length - 1]?.role === "user");
+  const showSpinner = isThinking && messages[messages.length - 1]?.role === "user";
+  const errorNode: TranscriptNode | null = error
+    ? {
+        id: "transport-error",
+        type: "assistant-error",
+        text: error.message,
+      }
+    : null;
+  const showWelcome = screenStartIndex === 0 || messages.length === 0;
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Scrollable message area */}
+    <div className="flex h-full min-h-0 flex-col bg-cc-bg text-cc-text">
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 pt-4 pb-2"
+        className="min-h-0 flex-1 overflow-y-auto"
       >
-        <Welcome />
+        <div className="flex min-h-full flex-col pb-3">
+          {showWelcome ? <Welcome /> : null}
 
-        {/* Local messages (help, etc.) */}
-        {localMessages.map((msg) =>
-          msg.role === "user" ? (
-            <div key={msg.id} className="mt-4">
-              <div className="flex">
-                <span className="w-5 shrink-0 text-cc-secondary select-none">
-                  {">"}
+          {transcript.map((node) => (
+            <Message key={node.id} node={node} />
+          ))}
+
+          {showSpinner ? (
+            <div className="mt-3 flex items-start px-1 text-[15px] leading-6">
+              <span className="w-4 shrink-0 text-cc-claude select-none">
+                {SPINNER_SEQUENCE[spinnerFrame]}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="text-cc-claude">
+                  {SPINNER_MESSAGES[spinnerMessageIndex]}...
                 </span>
-                <span className="text-cc-secondary">{msg.content}</span>
-              </div>
+                <span className="text-cc-secondary">
+                  {" "}({spinnerElapsed}s{extendedThinking ? " · thinking" : ""})
+                </span>
+              </span>
             </div>
-          ) : (
-            <div key={msg.id} className="mt-4">
-              <div className="flex">
-                <span className="w-5 shrink-0 select-none">⏺</span>
-                <div className="min-w-0 flex-1">
-                  <Markdown content={msg.content} />
-                </div>
-              </div>
-            </div>
-          ),
-        )}
+          ) : null}
 
-        {/* AI messages */}
-        {messages.map((msg) => (
-          <Message key={msg.id} message={msg} />
-        ))}
+          {errorNode ? <Message node={errorNode} /> : null}
+          <InputArea
+            disabled={false}
+            isLoading={isThinking}
+            input={input}
+            onInputChange={(value) => {
+              setInput(value);
+              setSelectedSuggestion(0);
+              if (error) {
+                clearError();
+              }
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            selectedSuggestion={selectedSuggestion}
+            suggestions={suggestions}
+            textareaRef={textareaRef}
+            extendedThinking={extendedThinking}
+            verboseOutput={verboseOutput}
+            historySearch={{
+              open: historySearchOpen,
+              query: historySearchQuery,
+              match: activeHistoryMatch,
+              current: historyMatches.length === 0 ? 0 : historySearchIndex + 1,
+              total: historyMatches.length,
+            }}
+          />
 
-        {/* Thinking spinner */}
-        {showSpinner && <ThinkingIndicator />}
-
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input area with border box + hints */}
-      <div className="shrink-0 px-2 pb-3">
-        <InputArea
-          onSend={handleSend}
-          onClear={handleClear}
-          disabled={isThinking}
-        />
+          <div ref={bottomRef} />
+        </div>
       </div>
     </div>
   );

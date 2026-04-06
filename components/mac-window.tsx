@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, type CSSProperties, type ReactNode } from "react";
 
 interface MacWindowProps {
-  children: React.ReactNode;
+  children: ReactNode;
   x: number;
   y: number;
   width: number;
@@ -26,7 +26,7 @@ const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 const ANIM_DURATION = "0.4s";
 const MIN_W = 450;
 const MIN_H = 300;
-const HANDLE = 6; // resize handle thickness in px
+const HANDLE = 6;
 
 type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
@@ -49,44 +49,7 @@ export function MacWindow({
   onClose,
   onAnimationEnd,
 }: MacWindowProps) {
-  // ---- Drag ----
   const dragRef = useRef<{ startX: number; startY: number; winX: number; winY: number } | null>(null);
-
-  const handleTitlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      // Don't drag from traffic light buttons
-      if ((e.target as HTMLElement).closest("[data-traffic-light]")) return;
-      e.preventDefault();
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      dragRef.current = { startX: e.clientX, startY: e.clientY, winX: x, winY: y };
-      onDragStart();
-    },
-    [x, y, onDragStart],
-  );
-
-  const handleTitlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!dragRef.current) return;
-      const dx = e.clientX - dragRef.current.startX;
-      const dy = e.clientY - dragRef.current.startY;
-      const newX = dragRef.current.winX + dx;
-      const newY = dragRef.current.winY + dy;
-      onDragMove(newX, newY, e.clientX, e.clientY);
-    },
-    [onDragMove],
-  );
-
-  const handleTitlePointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      if (!dragRef.current) return;
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-      dragRef.current = null;
-      onDragEnd();
-    },
-    [onDragEnd],
-  );
-
-  // ---- Resize ----
   const resizeRef = useRef<{
     dir: ResizeDir;
     startX: number;
@@ -97,81 +60,126 @@ export function MacWindow({
     origH: number;
   } | null>(null);
 
+  const handleTitlePointerDown = useCallback(
+    (event: React.PointerEvent) => {
+      if ((event.target as HTMLElement).closest("[data-traffic-light]")) {
+        return;
+      }
+
+      event.preventDefault();
+      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+      dragRef.current = { startX: event.clientX, startY: event.clientY, winX: x, winY: y };
+      onDragStart();
+    },
+    [onDragStart, x, y],
+  );
+
+  const handleTitlePointerMove = useCallback(
+    (event: React.PointerEvent) => {
+      if (!dragRef.current) {
+        return;
+      }
+
+      const dx = event.clientX - dragRef.current.startX;
+      const dy = event.clientY - dragRef.current.startY;
+      onDragMove(
+        dragRef.current.winX + dx,
+        dragRef.current.winY + dy,
+        event.clientX,
+        event.clientY,
+      );
+    },
+    [onDragMove],
+  );
+
+  const handleTitlePointerUp = useCallback(
+    (event: React.PointerEvent) => {
+      if (!dragRef.current) {
+        return;
+      }
+
+      (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+      dragRef.current = null;
+      onDragEnd();
+    },
+    [onDragEnd],
+  );
+
   const handleResizePointerDown = useCallback(
-    (dir: ResizeDir, e: React.PointerEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    (dir: ResizeDir, event: React.PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
       resizeRef.current = {
         dir,
-        startX: e.clientX,
-        startY: e.clientY,
+        startX: event.clientX,
+        startY: event.clientY,
         origX: x,
         origY: y,
         origW: width,
         origH: height,
       };
     },
-    [x, y, width, height],
+    [height, width, x, y],
   );
 
   const handleResizePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      const r = resizeRef.current;
-      if (!r) return;
-      const dx = e.clientX - r.startX;
-      const dy = e.clientY - r.startY;
+    (event: React.PointerEvent) => {
+      const active = resizeRef.current;
+      if (!active) {
+        return;
+      }
 
-      let newX = r.origX;
-      let newY = r.origY;
-      let newW = r.origW;
-      let newH = r.origH;
+      const dx = event.clientX - active.startX;
+      const dy = event.clientY - active.startY;
+      let nextX = active.origX;
+      let nextY = active.origY;
+      let nextWidth = active.origW;
+      let nextHeight = active.origH;
 
-      // East edge
-      if (r.dir.includes("e")) {
-        newW = Math.max(MIN_W, r.origW + dx);
+      if (active.dir.includes("e")) {
+        nextWidth = Math.max(MIN_W, active.origW + dx);
       }
-      // West edge
-      if (r.dir.includes("w")) {
-        const proposedW = r.origW - dx;
-        if (proposedW >= MIN_W) {
-          newW = proposedW;
-          newX = r.origX + dx;
-        }
-      }
-      // South edge
-      if (r.dir === "s" || r.dir === "se" || r.dir === "sw") {
-        newH = Math.max(MIN_H, r.origH + dy);
-      }
-      // North edge
-      if (r.dir === "n" || r.dir === "ne" || r.dir === "nw") {
-        const proposedH = r.origH - dy;
-        if (proposedH >= MIN_H) {
-          newH = proposedH;
-          newY = r.origY + dy;
+
+      if (active.dir.includes("w")) {
+        const proposedWidth = active.origW - dx;
+        if (proposedWidth >= MIN_W) {
+          nextWidth = proposedWidth;
+          nextX = active.origX + dx;
         }
       }
 
-      onResize(newW, newH, newX, newY);
+      if (active.dir === "s" || active.dir === "se" || active.dir === "sw") {
+        nextHeight = Math.max(MIN_H, active.origH + dy);
+      }
+
+      if (active.dir === "n" || active.dir === "ne" || active.dir === "nw") {
+        const proposedHeight = active.origH - dy;
+        if (proposedHeight >= MIN_H) {
+          nextHeight = proposedHeight;
+          nextY = active.origY + dy;
+        }
+      }
+
+      onResize(nextWidth, nextHeight, nextX, nextY);
     },
     [onResize],
   );
 
-  const handleResizePointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      if (!resizeRef.current) return;
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-      resizeRef.current = null;
-    },
-    [],
-  );
+  const handleResizePointerUp = useCallback((event: React.PointerEvent) => {
+    if (!resizeRef.current) {
+      return;
+    }
 
-  // ---- Styles ----
+    (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+    resizeRef.current = null;
+  }, []);
+
   const transition = isAnimating
     ? `left ${ANIM_DURATION} ${EASE}, top ${ANIM_DURATION} ${EASE}, width ${ANIM_DURATION} ${EASE}, height ${ANIM_DURATION} ${EASE}, opacity ${ANIM_DURATION} ${EASE}, transform ${ANIM_DURATION} ${EASE}`
     : "none";
 
-  let extraStyle: React.CSSProperties = {};
+  let extraStyle: CSSProperties = {};
 
   if (isMinimized) {
     extraStyle = {
@@ -187,7 +195,6 @@ export function MacWindow({
       pointerEvents: "none",
     };
   } else if (showOpenAnim) {
-    // Use CSS @keyframes animation — starts at opacity:0 scale(0.95), ends at opacity:1 scale(1)
     extraStyle = {
       animation: `windowOpen 0.4s ${EASE} forwards`,
       opacity: 0,
@@ -203,26 +210,31 @@ export function MacWindow({
         width,
         height,
         transition,
-        willChange: isAnimating || showOpenAnim ? "left, top, width, height, transform, opacity" : "auto",
+        willChange:
+          isAnimating || showOpenAnim
+            ? "left, top, width, height, transform, opacity"
+            : "auto",
         ...extraStyle,
       }}
-      onTransitionEnd={(e) => {
-        // Only fire once (on the first property that finishes)
-        if (e.target === e.currentTarget && (e.propertyName === "left" || e.propertyName === "opacity" || e.propertyName === "transform")) {
+      onTransitionEnd={(event) => {
+        if (
+          event.target === event.currentTarget &&
+          (event.propertyName === "left" ||
+            event.propertyName === "opacity" ||
+            event.propertyName === "transform")
+        ) {
           onAnimationEnd();
         }
       }}
     >
-      {/* Resize handles */}
-      {!isMinimized && !isClosed && (
+      {!isMinimized && !isClosed ? (
         <ResizeHandles
           onPointerDown={handleResizePointerDown}
           onPointerMove={handleResizePointerMove}
           onPointerUp={handleResizePointerUp}
         />
-      )}
+      ) : null}
 
-      {/* Window content */}
       <div
         className="flex h-full w-full flex-col overflow-hidden rounded-[10px]"
         style={{
@@ -230,7 +242,6 @@ export function MacWindow({
             "0 0 0 0.5px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1), 0 8px 24px rgba(0,0,0,0.15), 0 22px 70px 4px rgba(0,0,0,0.2)",
         }}
       >
-        {/* Title bar — drag handle */}
         <div
           className="relative flex shrink-0 items-center px-3"
           onPointerDown={handleTitlePointerDown}
@@ -245,11 +256,16 @@ export function MacWindow({
             touchAction: "none",
           }}
         >
-          <TrafficLights onClose={onClose} onMinimize={onMinimize} onMaximize={onMaximize} />
+          <TrafficLights
+            onClose={onClose}
+            onMinimize={onMinimize}
+            onMaximize={onMaximize}
+          />
           <span
             className="pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap"
             style={{
-              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
+              fontFamily:
+                '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
               fontSize: "13px",
               fontWeight: 400,
               color: "#EBEBEB",
@@ -259,23 +275,20 @@ export function MacWindow({
           </span>
         </div>
 
-        {/* Terminal body */}
         <div className="flex-1 overflow-hidden bg-black">{children}</div>
       </div>
     </div>
   );
 }
 
-// ---- Resize Handles ----
-
 function ResizeHandles({
   onPointerDown,
   onPointerMove,
   onPointerUp,
 }: {
-  onPointerDown: (dir: ResizeDir, e: React.PointerEvent) => void;
-  onPointerMove: (e: React.PointerEvent) => void;
-  onPointerUp: (e: React.PointerEvent) => void;
+  onPointerDown: (dir: ResizeDir, event: React.PointerEvent) => void;
+  onPointerMove: (event: React.PointerEvent) => void;
+  onPointerUp: (event: React.PointerEvent) => void;
 }) {
   const common = {
     onPointerMove,
@@ -285,21 +298,63 @@ function ResizeHandles({
 
   return (
     <>
-      {/* Edges */}
-      <div {...common} onPointerDown={(e) => onPointerDown("n", e)} className="cursor-ns-resize" style={{ ...common.style, top: -HANDLE / 2, left: HANDLE, right: HANDLE, height: HANDLE }} />
-      <div {...common} onPointerDown={(e) => onPointerDown("s", e)} className="cursor-ns-resize" style={{ ...common.style, bottom: -HANDLE / 2, left: HANDLE, right: HANDLE, height: HANDLE }} />
-      <div {...common} onPointerDown={(e) => onPointerDown("e", e)} className="cursor-ew-resize" style={{ ...common.style, right: -HANDLE / 2, top: HANDLE, bottom: HANDLE, width: HANDLE }} />
-      <div {...common} onPointerDown={(e) => onPointerDown("w", e)} className="cursor-ew-resize" style={{ ...common.style, left: -HANDLE / 2, top: HANDLE, bottom: HANDLE, width: HANDLE }} />
-      {/* Corners */}
-      <div {...common} onPointerDown={(e) => onPointerDown("nw", e)} className="cursor-nwse-resize" style={{ ...common.style, top: -HANDLE / 2, left: -HANDLE / 2, width: HANDLE * 2, height: HANDLE * 2 }} />
-      <div {...common} onPointerDown={(e) => onPointerDown("ne", e)} className="cursor-nesw-resize" style={{ ...common.style, top: -HANDLE / 2, right: -HANDLE / 2, width: HANDLE * 2, height: HANDLE * 2 }} />
-      <div {...common} onPointerDown={(e) => onPointerDown("sw", e)} className="cursor-nesw-resize" style={{ ...common.style, bottom: -HANDLE / 2, left: -HANDLE / 2, width: HANDLE * 2, height: HANDLE * 2 }} />
-      <div {...common} onPointerDown={(e) => onPointerDown("se", e)} className="cursor-nwse-resize" style={{ ...common.style, bottom: -HANDLE / 2, right: -HANDLE / 2, width: HANDLE * 2, height: HANDLE * 2 }} />
+      <div
+        {...common}
+        onPointerDown={(event) => onPointerDown("n", event)}
+        className="cursor-ns-resize"
+        style={{ ...common.style, top: -HANDLE / 2, left: HANDLE, right: HANDLE, height: HANDLE }}
+      />
+      <div
+        {...common}
+        onPointerDown={(event) => onPointerDown("s", event)}
+        className="cursor-ns-resize"
+        style={{
+          ...common.style,
+          bottom: -HANDLE / 2,
+          left: HANDLE,
+          right: HANDLE,
+          height: HANDLE,
+        }}
+      />
+      <div
+        {...common}
+        onPointerDown={(event) => onPointerDown("e", event)}
+        className="cursor-ew-resize"
+        style={{ ...common.style, right: -HANDLE / 2, top: HANDLE, bottom: HANDLE, width: HANDLE }}
+      />
+      <div
+        {...common}
+        onPointerDown={(event) => onPointerDown("w", event)}
+        className="cursor-ew-resize"
+        style={{ ...common.style, left: -HANDLE / 2, top: HANDLE, bottom: HANDLE, width: HANDLE }}
+      />
+      <div
+        {...common}
+        onPointerDown={(event) => onPointerDown("nw", event)}
+        className="cursor-nwse-resize"
+        style={{ ...common.style, top: -HANDLE / 2, left: -HANDLE / 2, width: HANDLE * 2, height: HANDLE * 2 }}
+      />
+      <div
+        {...common}
+        onPointerDown={(event) => onPointerDown("ne", event)}
+        className="cursor-nesw-resize"
+        style={{ ...common.style, top: -HANDLE / 2, right: -HANDLE / 2, width: HANDLE * 2, height: HANDLE * 2 }}
+      />
+      <div
+        {...common}
+        onPointerDown={(event) => onPointerDown("sw", event)}
+        className="cursor-nesw-resize"
+        style={{ ...common.style, bottom: -HANDLE / 2, left: -HANDLE / 2, width: HANDLE * 2, height: HANDLE * 2 }}
+      />
+      <div
+        {...common}
+        onPointerDown={(event) => onPointerDown("se", event)}
+        className="cursor-nwse-resize"
+        style={{ ...common.style, bottom: -HANDLE / 2, right: -HANDLE / 2, width: HANDLE * 2, height: HANDLE * 2 }}
+      />
     </>
   );
 }
-
-// ---- Traffic Lights ----
 
 function TrafficLights({
   onClose,
@@ -331,11 +386,11 @@ function TrafficLight({
   return (
     <button
       data-traffic-light
-      onClick={(e) => {
-        e.stopPropagation();
+      onClick={(event) => {
+        event.stopPropagation();
         onClick();
       }}
-      onDoubleClick={(e) => e.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
       className="relative flex items-center justify-center"
       style={{
         width: "12px",
@@ -347,21 +402,21 @@ function TrafficLight({
       }}
     >
       <svg className="hidden group-hover:block" width="6" height="6" viewBox="0 0 6 6" fill="none">
-        {icon === "close" && (
+        {icon === "close" ? (
           <>
             <line x1="0.5" y1="0.5" x2="5.5" y2="5.5" stroke="#4D0000" strokeWidth="1.2" strokeLinecap="round" />
             <line x1="5.5" y1="0.5" x2="0.5" y2="5.5" stroke="#4D0000" strokeWidth="1.2" strokeLinecap="round" />
           </>
-        )}
-        {icon === "minimize" && (
+        ) : null}
+        {icon === "minimize" ? (
           <line x1="0.5" y1="3" x2="5.5" y2="3" stroke="#995700" strokeWidth="1.2" strokeLinecap="round" />
-        )}
-        {icon === "maximize" && (
+        ) : null}
+        {icon === "maximize" ? (
           <>
             <polyline points="1,4 1,1 4,1" fill="none" stroke="#006500" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
             <polyline points="5,2 5,5 2,5" fill="none" stroke="#006500" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
           </>
-        )}
+        ) : null}
       </svg>
     </button>
   );

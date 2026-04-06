@@ -6,7 +6,9 @@ import {
 } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { systemPrompt } from "@/lib/system-prompt";
+import { SLASH_COMMAND_PROMPTS } from "@/lib/constants";
 import { tools } from "@/lib/tools";
+import type { AppMessage } from "@/lib/transcript";
 
 export const maxDuration = 60;
 
@@ -45,6 +47,41 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3002",
 ];
 
+function transformSlashCommands(messages: AppMessage[]) {
+  return messages.map((message) => {
+    if (message.role !== "user") {
+      return message;
+    }
+
+    const nextParts = message.parts.map((part) => {
+      if (part.type !== "text") {
+        return part;
+      }
+
+      const trimmed = part.text.trim();
+      if (!trimmed.startsWith("/")) {
+        return part;
+      }
+
+      const [commandName] = trimmed.slice(1).split(/\s+/, 1);
+      const prompt = SLASH_COMMAND_PROMPTS[commandName as keyof typeof SLASH_COMMAND_PROMPTS];
+      if (!prompt) {
+        return part;
+      }
+
+      return {
+        ...part,
+        text: prompt,
+      };
+    });
+
+    return {
+      ...message,
+      parts: nextParts,
+    };
+  });
+}
+
 export async function POST(req: Request) {
   // Origin check
   const origin = req.headers.get("origin") || req.headers.get("referer") || "";
@@ -67,15 +104,30 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { messages } = body as { messages: UIMessage[] };
+  const {
+    messages,
+    extendedThinking,
+  } = body as {
+    messages: UIMessage[];
+    extendedThinking?: boolean;
+    verboseOutput?: boolean;
+    commandContext?: { source: "slash" | "prompt"; commandName?: string };
+  };
+
+  const transformedMessages = transformSlashCommands(messages as AppMessage[]);
 
   const result = streamText({
     model: anthropic("claude-sonnet-4-6"),
     system: systemPrompt,
-    messages: await convertToModelMessages(messages),
+    messages: await convertToModelMessages(transformedMessages),
     tools,
-    stopWhen: stepCountIs(3),
-    maxOutputTokens: 1024,
+    providerOptions: {
+      anthropic: {
+        thinking: extendedThinking ? { type: "adaptive" } : { type: "disabled" },
+      },
+    },
+    stopWhen: stepCountIs(4),
+    maxOutputTokens: extendedThinking ? 2048 : 1024,
   });
 
   return result.toUIMessageStreamResponse();

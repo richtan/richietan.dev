@@ -1,106 +1,128 @@
 "use client";
 
-import type { UIMessage } from "ai";
 import { Markdown } from "./markdown";
-import { ToolCallBlock } from "./tool-call";
+import { HelpPanel } from "./help-panel";
+import type { TranscriptNode } from "@/lib/transcript";
 
-export function Message({ message }: { message: UIMessage }) {
-  if (message.role === "user") {
-    return <UserMessage message={message} />;
+export function Message({ node }: { node: TranscriptNode }) {
+  switch (node.type) {
+    case "user-prompt":
+      return (
+        <div className="mt-2 bg-cc-rail/95 text-[15px] leading-6 text-cc-text">
+          <div className="flex min-h-[28px] items-start px-1">
+            <span className="w-4 shrink-0 text-cc-secondary select-none">{">"}</span>
+            <div className="min-w-0 flex-1 whitespace-pre-wrap font-medium">
+              {node.text}
+            </div>
+          </div>
+        </div>
+      );
+
+    case "user-command":
+      return (
+        <div className="mt-2 bg-cc-rail/95 text-[15px] leading-6 text-cc-text">
+          <div className="flex min-h-[28px] items-start px-1">
+            <span className="w-4 shrink-0 text-cc-secondary select-none">{">"}</span>
+            <div className="min-w-0 flex-1 font-medium">{node.command}</div>
+          </div>
+        </div>
+      );
+
+    case "assistant-text":
+      return (
+        <div className="mt-3 flex items-start px-1">
+          <span className="w-4 shrink-0 select-none text-cc-text">●</span>
+          <div className="min-w-0 max-w-full flex-1">
+            <Markdown content={node.text} />
+          </div>
+        </div>
+      );
+
+    case "assistant-thinking":
+      return (
+        <div className="mt-3 px-1">
+          <div className="flex">
+            <span className="w-4 shrink-0 text-cc-claude select-none">✦</span>
+            <span className="text-cc-claude">Thinking...</span>
+          </div>
+          {node.text.trim() ? (
+            <div className="pl-4 text-cc-secondary italic">
+              <Markdown content={node.text} />
+            </div>
+          ) : null}
+        </div>
+      );
+
+    case "tool-summary": {
+      const dotClass =
+        node.state === "running"
+          ? "text-cc-claude animate-blink-dot"
+          : node.state === "success"
+            ? "text-cc-success"
+            : "text-cc-error";
+
+      return (
+        <div className="mt-3 flex items-start px-1 text-[15px] leading-6">
+          <span className={`w-4 shrink-0 select-none ${dotClass}`}>●</span>
+          <div className="min-w-0 flex-1">
+            <span className="font-semibold">{node.title}</span>
+            {node.detail ? (
+              <span className="text-cc-secondary">({node.detail})</span>
+            ) : null}
+            {node.state === "running" ? (
+              <span className="text-cc-secondary">...</span>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
+
+    case "tool-detail":
+      return (
+        <div className="mt-0.5 flex items-start px-1 text-[13px] leading-5">
+          <span
+            className={`w-5 shrink-0 select-none ${
+              node.status === "success" ? "text-cc-secondary" : "text-cc-error"
+            }`}
+          >
+            ⎿
+          </span>
+          <div
+            className={`min-w-0 flex-1 ${
+              node.status === "success" ? "text-cc-secondary" : "text-cc-error"
+            }`}
+          >
+            {node.multiline ? (
+              <pre className="whitespace-pre-wrap break-words">{node.text}</pre>
+            ) : (
+              node.text
+            )}
+          </div>
+        </div>
+      );
+
+    case "tip":
+      return (
+        <div className="mt-0.5 pl-6 pr-1 text-[12px] leading-4 text-cc-secondary">
+          {node.text}
+        </div>
+      );
+
+    case "assistant-error":
+      return (
+        <div className="mt-1 flex items-start px-1 text-[13px] leading-5">
+          <span className="w-5 shrink-0 select-none text-cc-error">⎿</span>
+          <div className="min-w-0 flex-1 whitespace-pre-wrap text-cc-error">
+            {node.text}
+          </div>
+        </div>
+      );
+
+    case "local-panel":
+      return (
+        <div className="mt-3">
+          <HelpPanel />
+        </div>
+      );
   }
-  if (message.role === "assistant") {
-    return <AssistantMessage message={message} />;
-  }
-  return null;
-}
-
-function UserMessage({ message }: { message: UIMessage }) {
-  const text = message.parts
-    .filter((p): p is { type: "text"; text: string } => p.type === "text")
-    .map((p) => p.text)
-    .join("");
-
-  return (
-    <div className="mt-4">
-      <div className="flex">
-        <span className="w-5 shrink-0 text-cc-secondary select-none">{">"}</span>
-        <span className="text-cc-secondary whitespace-pre-wrap">{text}</span>
-      </div>
-    </div>
-  );
-}
-
-function AssistantMessage({ message }: { message: UIMessage }) {
-  return (
-    <div className="mt-4">
-      {message.parts.map((part, i) => {
-        switch (part.type) {
-          case "text":
-            return (
-              <div key={i} className="flex">
-                <span className="w-5 shrink-0 select-none">⏺</span>
-                <div className="min-w-0 flex-1">
-                  <Markdown content={part.text} />
-                </div>
-              </div>
-            );
-          case "reasoning":
-            return (
-              <div key={i} className="mt-2 flex">
-                <span className="w-5 shrink-0 text-cc-secondary select-none">
-                  ✻
-                </span>
-                <span className="text-cc-secondary italic">
-                  Thinking...
-                </span>
-              </div>
-            );
-          case "step-start":
-            return null;
-          default:
-            if (isToolPart(part)) {
-              return (
-                <ToolCallBlock
-                  key={i}
-                  toolName={getToolName(part)}
-                  state={getToolState(part)}
-                  input={getToolInput(part)}
-                  output={getToolOutput(part)}
-                />
-              );
-            }
-            return null;
-        }
-      })}
-    </div>
-  );
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function isToolPart(part: any): boolean {
-  return (
-    part.type === "dynamic-tool" ||
-    (typeof part.type === "string" && part.type.startsWith("tool-"))
-  );
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getToolName(part: any): string {
-  if (part.type === "dynamic-tool") return part.toolName;
-  return part.type.replace("tool-", "");
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getToolState(part: any): string {
-  return part.state || "input-available";
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getToolInput(part: any): unknown {
-  return part.input;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getToolOutput(part: any): unknown {
-  return part.output;
 }

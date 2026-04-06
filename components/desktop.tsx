@@ -1,10 +1,10 @@
 "use client";
 
-import type { SnapZone } from "@/lib/use-window-state";
-import { getSnapRect } from "@/lib/use-window-state";
+import type { ReactNode } from "react";
+import { getSnapRect, type SnapZone } from "@/lib/use-window-state";
 
 interface DesktopProps {
-  children: React.ReactNode;
+  children: ReactNode;
   snapPreview: SnapZone;
   isMinimized: boolean;
   onRestore: () => void;
@@ -24,21 +24,18 @@ export function Desktop({
     <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]">
       {children}
 
-      {/* Snap preview overlay */}
-      {snapPreview && <SnapPreviewOverlay zone={snapPreview} />}
-
-      {/* Dock icon for minimized window */}
-      {isMinimized && <DockIcon onClick={onRestore} />}
-
-      {/* Closed state — click to reopen */}
-      {isClosed && <ClosedOverlay onClick={onReopen} />}
+      {snapPreview ? <SnapPreviewOverlay zone={snapPreview} /> : null}
+      {isMinimized ? <DockIcon onClick={onRestore} /> : null}
+      {isClosed ? <ClosedOverlay onClick={onReopen} /> : null}
     </div>
   );
 }
 
 function SnapPreviewOverlay({ zone }: { zone: SnapZone }) {
   const rect = getSnapRect(zone);
-  if (!rect) return null;
+  if (!rect) {
+    return null;
+  }
 
   return (
     <div

@@ -16,7 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body className="h-screen overflow-hidden bg-[#0f1729] font-mono text-white antialiased">
+      <body className="min-h-dvh overflow-hidden bg-cc-bg font-mono text-cc-text antialiased">
         {children}
       </body>
     </html>
