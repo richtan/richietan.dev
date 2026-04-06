@@ -1,7 +1,14 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { hackNerdMono } from "@/app/fonts";
 import { Welcome } from "./welcome";
 import { Message } from "./message";
@@ -77,6 +84,9 @@ const SPINNER_MESSAGES = [
   "Vibing",
   "Working",
 ];
+const LINE_BUFFER_SENTENCE_THRESHOLD = 48;
+const LINE_BUFFER_WORD_THRESHOLD = 72;
+const LINE_BUFFER_ENDING_THRESHOLD = 24;
 
 const HISTORY_KEY = `richietan.dev::claude-code::history::${CLAUDE_CWD}`;
 
@@ -183,6 +193,78 @@ function isInteractiveTarget(target: EventTarget | null) {
     : false;
 }
 
+function isStreamingStatus(status: string) {
+  return status === "submitted" || status === "streaming";
+}
+
+function shouldBufferAssistantMessage(message: AppMessage) {
+  return (
+    message.role === "assistant" &&
+    !message.metadata?.localError &&
+    !message.metadata?.localPanel
+  );
+}
+
+function getAssistantTextKey(messageId: string, partIndex: number) {
+  return `${messageId}:text:${partIndex}`;
+}
+
+function findSentenceBoundary(text: string) {
+  const matches = text.matchAll(/[.!?…]["')\]]?\s+/g);
+  let boundary = -1;
+
+  for (const match of matches) {
+    boundary = (match.index ?? 0) + match[0].length;
+  }
+
+  return boundary;
+}
+
+function getBufferedAssistantText(
+  rawText: string,
+  committedText: string,
+  forceFlush: boolean,
+) {
+  if (forceFlush) {
+    return rawText;
+  }
+
+  const safeCommitted = rawText.startsWith(committedText) ? committedText : "";
+  const pending = rawText.slice(safeCommitted.length);
+
+  if (!pending) {
+    return safeCommitted;
+  }
+
+  const lastNewline = pending.lastIndexOf("\n");
+  if (lastNewline !== -1) {
+    return safeCommitted + pending.slice(0, lastNewline + 1);
+  }
+
+  if (
+    pending.length >= LINE_BUFFER_ENDING_THRESHOLD &&
+    /[.!?…]["')\]]?$/.test(pending)
+  ) {
+    return safeCommitted + pending;
+  }
+
+  if (pending.length >= LINE_BUFFER_SENTENCE_THRESHOLD) {
+    const sentenceBoundary = findSentenceBoundary(pending);
+    if (sentenceBoundary > 0) {
+      return safeCommitted + pending.slice(0, sentenceBoundary);
+    }
+  }
+
+  if (pending.length >= LINE_BUFFER_WORD_THRESHOLD) {
+    const lastWhitespace = pending.lastIndexOf(" ");
+    if (lastWhitespace > 0) {
+      return safeCommitted + pending.slice(0, lastWhitespace + 1);
+    }
+  }
+
+  return safeCommitted;
+}
+
 export function Terminal() {
   const {
     messages,
@@ -213,11 +295,114 @@ export function Terminal() {
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [spinnerElapsed, setSpinnerElapsed] = useState(0);
   const [spinnerMessageIndex, setSpinnerMessageIndex] = useState(0);
+  const [committedAssistantText, setCommittedAssistantText] = useState<Record<string, string>>(
+    {},
+  );
   const followOutputRef = useRef(true);
   const touchYRef = useRef<number | null>(null);
 
   const visibleMessages = useDeferredValue(messages.slice(screenStartIndex));
-  const transcript = normalizeMessages(visibleMessages, { verboseOutput });
+  const isThinking = isStreamingStatus(status);
+
+  useEffect(() => {
+    const forceFlush = !isThinking || Boolean(error);
+    const frame = requestAnimationFrame(() => {
+      setCommittedAssistantText((current) => {
+        let next = current;
+        let changed = false;
+        const liveKeys = new Set<string>();
+
+        for (const message of visibleMessages) {
+          if (!shouldBufferAssistantMessage(message)) {
+            continue;
+          }
+
+          message.parts.forEach((part, index) => {
+            if (part.type !== "text") {
+              return;
+            }
+
+            const key = getAssistantTextKey(message.id, index);
+            liveKeys.add(key);
+
+            const bufferedText = getBufferedAssistantText(
+              part.text,
+              current[key] ?? "",
+              forceFlush,
+            );
+
+            if (bufferedText !== current[key]) {
+              if (next === current) {
+                next = { ...current };
+              }
+              next[key] = bufferedText;
+              changed = true;
+            }
+          });
+        }
+
+        for (const key of Object.keys(current)) {
+          if (liveKeys.has(key)) {
+            continue;
+          }
+
+          if (next === current) {
+            next = { ...current };
+          }
+          delete next[key];
+          changed = true;
+        }
+
+        return changed ? next : current;
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [error, isThinking, visibleMessages]);
+
+  const bufferedVisibleMessages = useMemo(
+    () =>
+      visibleMessages.map((message) => {
+        if (!shouldBufferAssistantMessage(message)) {
+          return message;
+        }
+
+        let changed = false;
+        const forceFlush = !isThinking || Boolean(error);
+        const parts = message.parts.map((part, index) => {
+          if (part.type !== "text") {
+            return part;
+          }
+
+          const key = getAssistantTextKey(message.id, index);
+          const bufferedText =
+            committedAssistantText[key] ??
+            getBufferedAssistantText(part.text, "", forceFlush);
+
+          if (bufferedText === part.text) {
+            return part;
+          }
+
+          changed = true;
+          return {
+            ...part,
+            text: bufferedText,
+          };
+        });
+
+        return changed
+          ? {
+              ...message,
+              parts,
+            }
+          : message;
+      }),
+    [committedAssistantText, error, isThinking, visibleMessages],
+  );
+
+  const transcript = normalizeMessages(bufferedVisibleMessages, { verboseOutput });
   const suggestions = input.startsWith("/")
     ? SLASH_COMMANDS.filter((command) =>
         command.name.startsWith(input.slice(1).toLowerCase()),
@@ -692,7 +877,6 @@ export function Terminal() {
     }
   }
 
-  const isThinking = status === "submitted" || status === "streaming";
   const effectiveShowShortcuts =
     showShortcuts &&
     input.length === 0 &&

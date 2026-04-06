@@ -249,7 +249,7 @@ export function MacWindow({
           onPointerUp={handleTitlePointerUp}
           onDoubleClick={onMaximize}
           style={{
-            height: "38px",
+            height: "32px",
             background: "#323232",
             userSelect: "none",
             cursor: "default",
