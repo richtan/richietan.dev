@@ -202,3 +202,15 @@ export async function getAggregatedLanguages(): Promise<
       .sort((a, b) => b.bytes - a.bytes);
   });
 }
+
+/** Fetch the LaTeX resume source from richtan/resume repo */
+export async function getResumeLatex(): Promise<string> {
+  return cached("resume-tex", HOUR, async () => {
+    const res = await fetch(
+      `https://raw.githubusercontent.com/${GITHUB_USERNAME}/resume/main/Richie_Tan_Resume.tex`,
+      { headers },
+    );
+    if (!res.ok) throw new Error(`GitHub raw ${res.status}`);
+    return res.text();
+  });
+}

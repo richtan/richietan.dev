@@ -1,43 +1,36 @@
 import { z } from "zod/v4";
 import { tool } from "ai";
-import { getResumeData } from "@/lib/resume";
 import {
   getGitHubProfile,
   getGitHubRepos,
   getPinnedRepos,
   getContributionStats,
   getAggregatedLanguages,
+  getResumeLatex,
 } from "@/lib/github";
 
 export const tools = {
   get_resume: tool({
     description:
-      "Get Richie Tan's full work history, education, and background summary. Use when asked about experience, resume, career, or background.",
+      "Get Richie Tan's full resume as LaTeX source — contains work history, education, projects, and skills. Use when asked about experience, resume, career, background, or qualifications.",
     inputSchema: z.object({}),
     execute: async () => {
-      const resume = getResumeData();
-      return {
-        summary: resume.basics?.summary,
-        work: resume.work,
-        education: resume.education,
-        certificates: resume.certificates,
-      };
+      const latex = await getResumeLatex();
+      return { format: "latex", source: latex };
     },
   }),
 
   get_projects: tool({
     description:
-      "Get Richie Tan's projects — both from resume and live GitHub repos (pinned and recent). Use when asked about projects, portfolio, or what Richie has built.",
+      "Get Richie Tan's projects — live GitHub repos (pinned and recent). Use when asked about projects, portfolio, or what Richie has built.",
     inputSchema: z.object({}),
     execute: async () => {
-      const resume = getResumeData();
       const [pinned, repos] = await Promise.all([
         getPinnedRepos(),
         getGitHubRepos(),
       ]);
 
       return {
-        resumeProjects: resume.projects,
         pinnedRepos: pinned,
         recentRepos: repos
           .filter((r) => !r.fork)
@@ -57,23 +50,19 @@ export const tools = {
 
   get_skills: tool({
     description:
-      "Get Richie Tan's technical skills from resume plus real language usage data from GitHub. Use when asked about skills, technologies, or tech stack.",
+      "Get Richie Tan's technical skills — real language usage data from GitHub repos. Use when asked about skills, technologies, or tech stack.",
     inputSchema: z.object({}),
     execute: async () => {
-      const resume = getResumeData();
       const languages = await getAggregatedLanguages();
 
-      // Convert bytes to percentage
       const totalBytes = languages.reduce((sum, l) => sum + l.bytes, 0);
       const topLanguages = languages.slice(0, 10).map((l) => ({
         language: l.language,
-        percentage: totalBytes > 0 ? Math.round((l.bytes / totalBytes) * 100) : 0,
+        percentage:
+          totalBytes > 0 ? Math.round((l.bytes / totalBytes) * 100) : 0,
       }));
 
-      return {
-        resumeSkills: resume.skills,
-        githubLanguages: topLanguages,
-      };
+      return { githubLanguages: topLanguages };
     },
   }),
 
@@ -82,12 +71,23 @@ export const tools = {
       "Get Richie Tan's contact info and social links. Use when asked about contact, email, social profiles, or how to reach Richie.",
     inputSchema: z.object({}),
     execute: async () => {
-      const resume = getResumeData();
+      // Contact info is in the LaTeX header, but also provide structured links
       return {
-        email: resume.basics?.email || "Not publicly listed",
-        url: resume.basics?.url,
-        profiles: resume.basics?.profiles,
-        location: resume.basics?.location,
+        email: "richietan2004@gmail.com",
+        website: "https://richietan.dev",
+        profiles: [
+          {
+            network: "GitHub",
+            username: "richtan",
+            url: "https://github.com/richtan",
+          },
+          {
+            network: "LinkedIn",
+            username: "richie-tan",
+            url: "https://linkedin.com/in/richie-tan",
+          },
+        ],
+        location: "Los Gatos, CA",
       };
     },
   }),
