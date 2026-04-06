@@ -1,6 +1,9 @@
 "use client";
 
-import { SLASH_COMMANDS } from "@/lib/constants";
+import {
+  CLAUDE_HEADER_TITLE,
+  SLASH_COMMANDS,
+} from "@/lib/constants";
 
 function padRight(value: string, width: number) {
   return value + " ".repeat(Math.max(0, width - value.length));
@@ -9,18 +12,17 @@ function padRight(value: string, width: number) {
 export function HelpPanel() {
   const commandWidth = Math.max(...SLASH_COMMANDS.map((command) => command.name.length)) + 3;
   const lines = [
-    "Claude Code browser shortcuts",
+    CLAUDE_HEADER_TITLE,
     "",
-    "This shell mirrors Claude Code's REPL feel while staying focused on",
-    "Richie Tan's resume, projects, skills, and contact details.",
+    "Ask about Richie Tan's experience, projects, skills, and contact details.",
     "",
-    "Common tasks",
+    "Available tasks",
     "  > what experience does Richie have?",
     "  > /projects",
     "  > /skills",
     "  > /contact",
     "",
-    "Interactive mode commands",
+    "Commands",
     ...SLASH_COMMANDS.map((command) =>
       `  /${padRight(command.name, commandWidth)}${command.description}`,
     ),
@@ -31,8 +33,8 @@ export function HelpPanel() {
   ].join("\n");
 
   return (
-    <pre className="m-0 whitespace-pre-wrap break-words px-1 text-[13px] leading-5 text-cc-secondary">
-      <span className="text-cc-claude">Claude Code browser shortcuts</span>
+    <pre className="m-0 whitespace-pre-wrap break-words px-1 text-cc-secondary">
+      <span className="text-cc-claude">{CLAUDE_HEADER_TITLE}</span>
       {"\n"}
       {lines.split("\n").slice(1).join("\n")}
     </pre>

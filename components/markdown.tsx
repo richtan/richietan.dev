@@ -80,7 +80,7 @@ function renderMarkdownToText(markdown: string) {
     }
 
     if (/^\s*[-*_]{3,}\s*$/.test(line)) {
-      output.push("────────────────────────────────────────────────");
+      output.push("────────────────────────");
       continue;
     }
 
@@ -112,7 +112,7 @@ function renderMarkdownToText(markdown: string) {
 
 export function Markdown({ content }: { content: string }) {
   return (
-    <pre className="m-0 min-w-0 whitespace-pre-wrap break-words text-[15px] leading-[1.25] text-cc-text">
+    <pre className="m-0 min-w-0 whitespace-pre-wrap break-words text-cc-text">
       {renderMarkdownToText(content)}
     </pre>
   );

@@ -1,4 +1,7 @@
-export const CLAUDE_CWD = "~/richietan.dev";
+export const CLAUDE_CWD = "/private/tmp";
+export const CLAUDE_HEADER_TITLE = "Claude Code v2.1.92";
+export const CLAUDE_HEADER_SUBTITLE = "Opus 4.6 (1M context) · Claude Max";
+export const CLAUDE_FOOTER_STATUS = "◐ medium · /effort";
 
 export const SLASH_COMMANDS = [
   {

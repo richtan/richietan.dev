@@ -5,11 +5,7 @@ import { startTransition, useDeferredValue, useEffect, useRef, useState } from "
 import { Welcome } from "./welcome";
 import { Message } from "./message";
 import { InputArea } from "./input-area";
-import {
-  CLAUDE_CWD,
-  getSlashCommand,
-  SLASH_COMMANDS,
-} from "@/lib/constants";
+import { CLAUDE_CWD, getSlashCommand, SLASH_COMMANDS } from "@/lib/constants";
 import {
   AppMessage,
   createAssistantPanelMessage,
@@ -21,6 +17,7 @@ import {
 
 const SPINNER_CHARS = ["·", "✢", "✳", "∗", "✻", "✽"];
 const SPINNER_SEQUENCE = [...SPINNER_CHARS, ...[...SPINNER_CHARS].reverse()];
+const AUTO_SCROLL_THRESHOLD = 32;
 const SPINNER_MESSAGES = [
   "Accomplishing",
   "Actioning",
@@ -48,13 +45,6 @@ const SPINNER_MESSAGES = [
   "Thinking",
   "Vibing",
   "Working",
-];
-
-const EXAMPLE_PROMPTS = [
-  'Try "tell me about Richie"',
-  'Try "show me Richie\'s resume"',
-  'Try "what projects has Richie built?"',
-  'Try "how can I contact Richie?"',
 ];
 
 const HISTORY_KEY = `richietan.dev::claude-code::history::${CLAUDE_CWD}`;
@@ -155,13 +145,11 @@ export function Terminal() {
   });
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [input, setInput] = useState("");
-  const [placeholder] = useState(EXAMPLE_PROMPTS[0]!);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
-  const [extendedThinking, setExtendedThinking] = useState(true);
+  const [extendedThinking, setExtendedThinking] = useState(false);
   const [verboseOutput, setVerboseOutput] = useState(false);
   const [screenStartIndex, setScreenStartIndex] = useState(0);
   const [history, setHistory] = useState<string[]>(getStoredHistory);
@@ -191,11 +179,30 @@ export function Terminal() {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-100)));
   }, [history]);
 
-  useEffect(() => {
-    if (autoScroll && bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: "smooth" });
+  function scrollToBottom(behavior: ScrollBehavior = "auto") {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
     }
-  }, [autoScroll, transcript.length, status]);
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior,
+    });
+  }
+
+  useEffect(() => {
+    if (!autoScroll) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      scrollToBottom(status === "streaming" ? "auto" : "smooth");
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [autoScroll, transcript, status, error]);
 
   useEffect(() => {
     if (status !== "submitted" && status !== "streaming") {
@@ -219,7 +226,8 @@ export function Terminal() {
   function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    const atBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight <= AUTO_SCROLL_THRESHOLD;
     setAutoScroll(atBottom);
   }
 
@@ -249,6 +257,8 @@ export function Terminal() {
     setSpinnerFrame(0);
     setSpinnerMessageIndex((index) => (index + 1) % SPINNER_MESSAGES.length);
     clearError();
+    setAutoScroll(true);
+    scrollToBottom("auto");
     setInput("");
     setSelectedSuggestion(0);
     setHistorySearchOpen(false);
@@ -323,6 +333,7 @@ export function Terminal() {
 
   async function clearConversation() {
     clearError();
+    setAutoScroll(true);
     setInput("");
     setHistory([]);
     setHistoryIndex(null);
@@ -586,13 +597,13 @@ export function Terminal() {
   const showWelcome = screenStartIndex === 0 || messages.length === 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-cc-bg text-cc-text">
+    <div className="flex h-full min-h-0 flex-col bg-cc-bg text-[13px] leading-[1.2] text-cc-text">
       <div
         ref={scrollRef}
         onScroll={handleScroll}
         className="min-h-0 flex-1 overflow-y-auto"
       >
-        <div className="flex min-h-full flex-col pb-3">
+        <div className="flex min-h-full flex-col px-[1px] pt-[1px] pb-2">
           {showWelcome ? <Welcome /> : null}
 
           {transcript.map((node) => (
@@ -600,7 +611,7 @@ export function Terminal() {
           ))}
 
           {showSpinner ? (
-            <div className="mt-3 flex items-start px-1 text-[15px] leading-6">
+            <div className="mt-2 flex items-baseline px-1">
               <span className="w-4 shrink-0 text-cc-claude select-none">
                 {SPINNER_SEQUENCE[spinnerFrame]}
               </span>
@@ -609,42 +620,41 @@ export function Terminal() {
                   {SPINNER_MESSAGES[spinnerMessageIndex]}...
                 </span>
                 <span className="text-cc-secondary">
-                  {" "}({spinnerElapsed}s{extendedThinking ? " · thinking" : ""})
+                  {" "}({spinnerElapsed}s)
                 </span>
               </span>
             </div>
           ) : null}
 
           {errorNode ? <Message node={errorNode} /> : null}
-          <InputArea
-            disabled={false}
-            isLoading={isThinking}
-            input={input}
-            onInputChange={(value) => {
-              setInput(value);
-              setSelectedSuggestion(0);
-              if (error) {
-                clearError();
-              }
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholder}
-            selectedSuggestion={selectedSuggestion}
-            suggestions={suggestions}
-            textareaRef={textareaRef}
-            extendedThinking={extendedThinking}
-            verboseOutput={verboseOutput}
-            historySearch={{
-              open: historySearchOpen,
-              query: historySearchQuery,
-              match: activeHistoryMatch,
-              current: historyMatches.length === 0 ? 0 : historySearchIndex + 1,
-              total: historyMatches.length,
-            }}
-          />
 
-          <div ref={bottomRef} />
         </div>
+      </div>
+
+      <div className="shrink-0 px-[1px] pb-2">
+        <InputArea
+          disabled={false}
+          isLoading={isThinking}
+          input={input}
+          onInputChange={(value) => {
+            setInput(value);
+            setSelectedSuggestion(0);
+            if (error) {
+              clearError();
+            }
+          }}
+          onKeyDown={handleKeyDown}
+          selectedSuggestion={selectedSuggestion}
+          suggestions={suggestions}
+          textareaRef={textareaRef}
+          historySearch={{
+            open: historySearchOpen,
+            query: historySearchQuery,
+            match: activeHistoryMatch,
+            current: historyMatches.length === 0 ? 0 : historySearchIndex + 1,
+            total: historyMatches.length,
+          }}
+        />
       </div>
     </div>
   );

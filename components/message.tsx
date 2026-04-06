@@ -8,27 +8,31 @@ export function Message({ node }: { node: TranscriptNode }) {
   switch (node.type) {
     case "user-prompt":
       return (
-        <div className="mt-2 flex items-start px-1 text-[15px] leading-6 text-cc-text">
-          <span className="w-4 shrink-0 text-cc-secondary select-none">{">"}</span>
-          <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words">
-            {node.text}
-          </pre>
+        <div className="mt-1.5 bg-cc-rail px-1 text-cc-text">
+          <div className="flex items-baseline py-1">
+            <span className="w-4 shrink-0 select-none text-cc-secondary">›</span>
+            <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words">
+              {node.text}
+            </pre>
+          </div>
         </div>
       );
 
     case "user-command":
       return (
-        <div className="mt-2 flex items-start px-1 text-[15px] leading-6 text-cc-text">
-          <span className="w-4 shrink-0 text-cc-secondary select-none">{">"}</span>
-          <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words">
-            {node.command}
-          </pre>
+        <div className="mt-1.5 bg-cc-rail px-1 text-cc-text">
+          <div className="flex items-baseline py-1">
+            <span className="w-4 shrink-0 select-none text-cc-secondary">›</span>
+            <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words">
+              {node.command}
+            </pre>
+          </div>
         </div>
       );
 
     case "assistant-text":
       return (
-        <div className="mt-3 flex items-start px-1">
+        <div className="mt-2 flex items-baseline px-1">
           <span className="w-4 shrink-0 select-none text-cc-text">●</span>
           <div className="min-w-0 max-w-full flex-1">
             <Markdown content={node.text} />
@@ -38,15 +42,15 @@ export function Message({ node }: { node: TranscriptNode }) {
 
     case "assistant-thinking":
       return (
-        <div className="mt-3 px-1">
-          <div className="flex">
+        <div className="mt-2 px-1">
+          <div className="flex items-baseline">
             <span className="w-4 shrink-0 text-cc-claude select-none">✻</span>
             <span className="text-cc-claude">Thinking...</span>
           </div>
           {node.text.trim() ? (
-            <div className="pl-4 text-cc-secondary italic">
-              <Markdown content={node.text} />
-            </div>
+            <pre className="m-0 whitespace-pre-wrap break-words pl-4 text-cc-secondary italic">
+              {node.text}
+            </pre>
           ) : null}
         </div>
       );
@@ -60,7 +64,7 @@ export function Message({ node }: { node: TranscriptNode }) {
             : "text-cc-error";
 
       return (
-        <div className="mt-3 flex items-start px-1 text-[15px] leading-6">
+        <div className="mt-2 flex items-baseline px-1">
           <span className={`w-4 shrink-0 select-none ${dotClass}`}>●</span>
           <div className="min-w-0 flex-1">
             <span className="font-semibold">{node.title}</span>
@@ -77,9 +81,9 @@ export function Message({ node }: { node: TranscriptNode }) {
 
     case "tool-detail":
       return (
-        <div className="mt-0.5 flex items-start px-1 text-[13px] leading-5">
+        <div className="mt-0 flex items-baseline px-1">
           <span
-            className={`w-5 shrink-0 select-none ${
+            className={`w-4 shrink-0 select-none ${
               node.status === "success" ? "text-cc-secondary" : "text-cc-error"
             }`}
           >
@@ -91,7 +95,7 @@ export function Message({ node }: { node: TranscriptNode }) {
             }`}
           >
             {node.multiline ? (
-              <pre className="whitespace-pre-wrap break-words">{node.text}</pre>
+              <pre className="m-0 whitespace-pre-wrap break-words">{node.text}</pre>
             ) : (
               node.text
             )}
@@ -101,15 +105,15 @@ export function Message({ node }: { node: TranscriptNode }) {
 
     case "tip":
       return (
-        <div className="mt-0.5 pl-6 pr-1 text-[12px] leading-4 text-cc-secondary">
+        <div className="mt-0 pl-5 pr-1 text-cc-secondary/80">
           {node.text}
         </div>
       );
 
     case "assistant-error":
       return (
-        <div className="mt-1 flex items-start px-1 text-[13px] leading-5">
-          <span className="w-5 shrink-0 select-none text-cc-error">⎿</span>
+        <div className="mt-0 flex items-baseline px-1">
+          <span className="w-4 shrink-0 select-none text-cc-error">⎿</span>
           <div className="min-w-0 flex-1 whitespace-pre-wrap text-cc-error">
             {node.text}
           </div>
@@ -118,7 +122,7 @@ export function Message({ node }: { node: TranscriptNode }) {
 
     case "local-panel":
       return (
-        <div className="mt-3">
+        <div className="mt-2">
           <HelpPanel />
         </div>
       );

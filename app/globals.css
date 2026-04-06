@@ -4,13 +4,13 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  --color-cc-claude: #D97757;
-  --color-cc-bg: #161a1f;
+  --color-cc-claude: #d57a58;
+  --color-cc-bg: #171a1f;
   --color-cc-panel: #1b2026;
-  --color-cc-rail: #3a3a3b;
-  --color-cc-text: #f1f1f2;
-  --color-cc-secondary: #9a9a9d;
-  --color-cc-border: #7e8288;
+  --color-cc-rail: #3f3f41;
+  --color-cc-text: #e7e8eb;
+  --color-cc-secondary: #84878d;
+  --color-cc-border: #6d7178;
   --color-cc-bash: #fd5db1;
   --color-cc-permission: #b1b9f9;
   --color-cc-suggestion: #b1b9f9;
@@ -31,6 +31,7 @@ body {
   font-family: var(--font-geist-mono), monospace;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "liga" 0, "calt" 0;
 }
 
 ::-webkit-scrollbar {
@@ -74,19 +75,4 @@ body {
 }
 .animate-blink-dot {
   animation: blink-dot 600ms step-end infinite;
-}
-
-@keyframes caret-pulse {
-  0%,
-  49% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
-  }
-}
-
-.animate-caret-pulse {
-  animation: caret-pulse 1s step-end infinite;
 }
