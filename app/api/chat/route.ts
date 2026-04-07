@@ -43,8 +43,6 @@ if (typeof globalThis !== "undefined") {
 const ALLOWED_ORIGINS = [
   "https://richietan.dev",
   "https://www.richietan.dev",
-  "http://localhost:3000",
-  "http://localhost:3002",
 ];
 
 function transformSlashCommands(messages: AppMessage[]) {
