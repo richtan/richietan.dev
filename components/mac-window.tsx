@@ -183,14 +183,14 @@ export function MacWindow({
 
   if (isMinimized) {
     extraStyle = {
-      transform: "scale(0.12) translateY(55vh)",
+      transform: "translateY(56px) scale(0.9)",
       opacity: 0,
       pointerEvents: "none",
-      transformOrigin: "center bottom",
+      transformOrigin: "center top",
     };
   } else if (isClosed) {
     extraStyle = {
-      transform: "scale(0.92)",
+      transform: "scale(0.94)",
       opacity: 0,
       pointerEvents: "none",
     };

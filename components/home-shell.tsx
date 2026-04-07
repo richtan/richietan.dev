@@ -11,10 +11,17 @@ export function HomeShell() {
   return (
     <Desktop
       snapPreview={win.dragSnapZone}
-      isMinimized={win.state.isMinimized}
-      onRestore={win.restore}
-      isClosed={win.state.isClosed}
-      onReopen={win.reopen}
+      showDesktopIcon={win.state.isClosed || win.state.isMinimized}
+      onDesktopIconOpen={() => {
+        if (win.state.isClosed) {
+          win.reopen();
+          return;
+        }
+
+        if (win.state.isMinimized) {
+          win.restore();
+        }
+      }}
     >
       <MacWindow
         x={win.state.x}

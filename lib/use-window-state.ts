@@ -18,7 +18,7 @@ export type SnapZone =
   | "bottom-right"
   | null;
 
-interface Rect {
+export interface Rect {
   x: number;
   y: number;
   width: number;
@@ -49,7 +49,7 @@ const VP_PAD = 16;
 const SNAP_GAP = 8;
 const SNAP_EDGE_THRESHOLD = 5;
 const SNAP_CORNER_SIZE = 60;
-const TITLE_BAR_H = 38;
+const TITLE_BAR_H = 32;
 const TITLE_GRAB = 60;
 const DEFAULT_VIEWPORT: Viewport = {
   width: 800 + VP_PAD * 2,
@@ -403,17 +403,29 @@ export function useWindowState() {
   }, [scheduleAnimClear, viewport]);
 
   const minimize = useCallback(() => {
-    setState((current) => ({ ...current, isMinimized: true, isAnimating: true }));
+    setState((current) => ({
+      ...current,
+      isMinimized: true,
+      isAnimating: true,
+    }));
     scheduleAnimClear();
   }, [scheduleAnimClear]);
 
   const restore = useCallback(() => {
-    setState((current) => ({ ...current, isMinimized: false, isAnimating: true }));
+    setState((current) => ({
+      ...current,
+      isMinimized: false,
+      isAnimating: true,
+    }));
     scheduleAnimClear();
   }, [scheduleAnimClear]);
 
   const close = useCallback(() => {
-    setState((current) => ({ ...current, isClosed: true, isAnimating: true }));
+    setState((current) => ({
+      ...current,
+      isClosed: true,
+      isAnimating: true,
+    }));
     scheduleAnimClear();
   }, [scheduleAnimClear]);
 
