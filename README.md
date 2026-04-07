@@ -7,7 +7,7 @@ Claude Code-inspired personal website for Richie Tan, built as a browser-based t
 - Recreates the feel of Claude Code in the browser, including a terminal-style transcript, prompt, shortcuts, slash commands, and local help surfaces.
 - Answers questions about Richie using an Anthropic model through the Vercel AI SDK.
 - Pulls live portfolio data from GitHub through tool calls for projects, skills, resume source, and profile stats.
-- Includes a macOS-style desktop/window shell with a relaunch icon when the terminal window is closed or minimized.
+- Includes a macOS-style desktop/window shell with a floating application launcher for reopening Claude.
 
 ## Stack
 
@@ -67,7 +67,7 @@ npm run start
 - `components/home-shell.tsx`
   Composes the desktop, macOS-style window, and terminal.
 - `components/desktop.tsx`
-  Owns the desktop surface, snap preview, and relaunch icon.
+  Owns the desktop surface, snap preview, and floating application launcher.
 - `components/mac-window.tsx`
   Handles window drag, resize, minimize, maximize, and close behavior.
 

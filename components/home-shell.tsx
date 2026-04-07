@@ -11,8 +11,14 @@ export function HomeShell() {
   return (
     <Desktop
       snapPreview={win.dragSnapZone}
-      showDesktopIcon={win.state.isClosed || win.state.isMinimized}
-      onDesktopIconOpen={() => {
+      claudeStatus={
+        win.state.isClosed
+          ? "closed"
+          : win.state.isMinimized
+            ? "minimized"
+            : "open"
+      }
+      onClaudeLaunch={() => {
         if (win.state.isClosed) {
           win.reopen();
           return;

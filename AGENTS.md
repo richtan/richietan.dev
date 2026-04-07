@@ -35,7 +35,7 @@ npm run start
 - `components/home-shell.tsx`
   Composes desktop, window, and terminal.
 - `components/desktop.tsx`
-  Desktop surface, desktop icon, and snap preview.
+  Desktop surface, application launcher, and snap preview.
 - `components/mac-window.tsx`
   Window controls, drag, resize, minimize, maximize, close.
 - `components/terminal.tsx`
@@ -54,7 +54,7 @@ npm run start
 ## Project Conventions
 
 - Preserve the Claude Code-inspired UX unless the task explicitly changes it.
-- The desktop icon is only a relaunch/restore affordance when the window is closed or minimized.
+- The application launcher is the relaunch/restore affordance for reopening Claude.
 - Keep root app/browser icons in `app/` using Next metadata file conventions:
   - `app/favicon.ico`
   - `app/icon.png`
