@@ -286,7 +286,13 @@ export function InputArea({
           })}
         </div>
       ) : (
-        <div className="flex h-[1.2em] items-center justify-between px-2 text-cc-secondary">
+        <div
+          className="flex h-[1.2em] items-center justify-between text-cc-secondary"
+          style={{
+            paddingLeft: "calc(0.5rem + 2ch)",
+            paddingRight: "0.95rem",
+          }}
+        >
           <span>{footerLeft}</span>
           {footerRight ? <span>{footerRight}</span> : <span />}
         </div>
