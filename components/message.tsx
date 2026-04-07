@@ -13,7 +13,9 @@ function UserRow({ text }: { text: string }) {
   return (
     <div className={`${TRANSCRIPT_ROW_GAP} px-2`}>
       <div className={USER_ROW}>
-        <span className="w-4 shrink-0 select-none text-cc-secondary">❯</span>
+        <span className="w-4 shrink-0 select-none text-cc-secondary opacity-[0.5]">
+          ❯
+        </span>
         <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words">
           {text}
         </pre>
