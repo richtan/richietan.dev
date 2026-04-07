@@ -53,14 +53,14 @@ export function HelpPanel() {
         </div>
 
         <div className="pt-[2.4em]">
-          For more help:{" "}
+          Give this a star at{" "}
           <a
-            href="https://code.claude.com/docs/en/overview"
+            href="https://github.com/richtan/richietan.dev"
             target="_blank"
             rel="noreferrer"
             className="text-cc-suggestion underline underline-offset-2"
           >
-            https://code.claude.com/docs/en/overview
+            https://github.com/richtan/richietan.dev
           </a>
         </div>
 
