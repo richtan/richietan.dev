@@ -13,6 +13,7 @@ import { Welcome } from "./welcome";
 import { Message } from "./message";
 import { InputArea } from "./input-area";
 import { CLAUDE_CWD, getSlashCommand, SLASH_COMMANDS } from "@/lib/constants";
+import { DOUBLE_ESCAPE_TIMEOUT_MS } from "@/lib/terminal-shortcuts";
 import {
   AppMessage,
   createAssistantPanelMessage,
@@ -85,6 +86,10 @@ const SPINNER_MESSAGES = [
 ];
 
 const HISTORY_KEY = `richietan.dev::claude-code::history::${CLAUDE_CWD}`;
+const wordSegmenter =
+  typeof Intl !== "undefined" && "Segmenter" in Intl
+    ? new Intl.Segmenter(undefined, { granularity: "word" })
+    : null;
 
 function getStoredHistory() {
   if (typeof window === "undefined") {
@@ -106,38 +111,99 @@ function getStoredHistory() {
   }
 }
 
-function setCursorPosition(
+function setSelectionRange(
   textarea: HTMLTextAreaElement | null,
-  position: number,
+  start: number,
+  end = start,
 ) {
   if (!textarea) {
     return;
   }
 
   requestAnimationFrame(() => {
-    textarea.selectionStart = position;
-    textarea.selectionEnd = position;
+    textarea.selectionStart = start;
+    textarea.selectionEnd = end;
   });
 }
 
-function replaceSelection(
-  textarea: HTMLTextAreaElement | null,
-  value: string,
-  setInput: (value: string) => void,
-  replacement: string,
-  removePreviousChar = false,
-) {
-  if (!textarea) {
-    return;
+function getSelectionRange(textarea: HTMLTextAreaElement | null) {
+  return {
+    start: textarea?.selectionStart ?? 0,
+    end: textarea?.selectionEnd ?? 0,
+  };
+}
+
+function getLineStart(value: string, position: number) {
+  const previousNewline = value.lastIndexOf("\n", Math.max(0, position - 1));
+  return previousNewline === -1 ? 0 : previousNewline + 1;
+}
+
+function getLineEnd(value: string, position: number) {
+  const nextNewline = value.indexOf("\n", position);
+  return nextNewline === -1 ? value.length : nextNewline;
+}
+
+function getWordBoundaries(value: string) {
+  if (!wordSegmenter) {
+    const boundaries: Array<{ start: number; end: number; isWordLike: boolean }> = [];
+    const pattern = /\S+/gu;
+
+    for (const match of value.matchAll(pattern)) {
+      const segment = match[0];
+      const start = match.index ?? 0;
+      boundaries.push({
+        start,
+        end: start + segment.length,
+        isWordLike: true,
+      });
+    }
+
+    return boundaries;
   }
 
-  const start = textarea.selectionStart;
-  const end = textarea.selectionEnd;
-  const safeStart = removePreviousChar ? Math.max(0, start - 1) : start;
-  const nextValue = `${value.slice(0, safeStart)}${replacement}${value.slice(end)}`;
-  const nextCursor = safeStart + replacement.length;
-  setInput(nextValue);
-  setCursorPosition(textarea, nextCursor);
+  return Array.from(wordSegmenter.segment(value)).map((segment) => ({
+    start: segment.index,
+    end: segment.index + segment.segment.length,
+    isWordLike: segment.isWordLike ?? /\S/u.test(segment.segment),
+  }));
+}
+
+function findPreviousWordStart(value: string, position: number) {
+  if (position <= 0) {
+    return 0;
+  }
+
+  let previousWordStart = 0;
+
+  for (const boundary of getWordBoundaries(value)) {
+    if (!boundary.isWordLike) {
+      continue;
+    }
+
+    if (boundary.start < position) {
+      if (position > boundary.start && position <= boundary.end) {
+        return boundary.start;
+      }
+
+      previousWordStart = boundary.start;
+    }
+  }
+
+  return previousWordStart;
+}
+
+function findNextWordStart(value: string, position: number) {
+  if (position >= value.length) {
+    return value.length;
+  }
+
+  for (const boundary of getWordBoundaries(value)) {
+    if (boundary.isWordLike && boundary.start > position) {
+      return boundary.start;
+    }
+  }
+
+  return value.length;
 }
 
 function getHistoryMatches(history: string[], query: string) {
@@ -218,11 +284,14 @@ export function Terminal() {
   const [historySearchQuery, setHistorySearchQuery] = useState("");
   const [historySearchIndex, setHistorySearchIndex] = useState(0);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [pendingEscapeClear, setPendingEscapeClear] = useState(false);
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [spinnerElapsed, setSpinnerElapsed] = useState(0);
   const [spinnerMessageIndex, setSpinnerMessageIndex] = useState(0);
   const [followOutput, setFollowOutput] = useState(true);
   const touchYRef = useRef<number | null>(null);
+  const killBufferRef = useRef("");
 
   const visibleMessages = messages.slice(screenStartIndex);
   const isThinking = isStreamingStatus(status);
@@ -245,6 +314,20 @@ export function Terminal() {
     }
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-100)));
   }, [history]);
+
+  useEffect(() => {
+    if (!pendingEscapeClear) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setPendingEscapeClear(false);
+    }, DOUBLE_ESCAPE_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [pendingEscapeClear]);
 
   function scrollToBottom() {
     const el = scrollRef.current;
@@ -310,6 +393,46 @@ export function Terminal() {
     textareaRef.current?.focus({ preventScroll: true });
   }
 
+  function syncSelection(start: number, end = start) {
+    setSelection({ start, end });
+    setSelectionRange(textareaRef.current, start, end);
+  }
+
+  function applyInputEdit(nextValue: string, start: number, end = start) {
+    setInput(nextValue);
+    setSelectedSuggestion(0);
+    setPendingEscapeClear(false);
+    if (error) {
+      clearError();
+    }
+    syncSelection(start, end);
+  }
+
+  function moveCursor(nextPosition: number) {
+    setPendingEscapeClear(false);
+    syncSelection(nextPosition);
+  }
+
+  function insertTextAtSelection(text: string) {
+    const { start, end } = getSelectionRange(textareaRef.current);
+    const nextValue = `${input.slice(0, start)}${text}${input.slice(end)}`;
+    applyInputEdit(nextValue, start + text.length);
+  }
+
+  function deleteSelectionOrRange(start: number, end: number, storeKilled = false) {
+    if (start === end) {
+      return;
+    }
+
+    const deletedText = input.slice(start, end);
+    if (storeKilled && deletedText.length > 0) {
+      killBufferRef.current = deletedText;
+    }
+
+    const nextValue = `${input.slice(0, start)}${input.slice(end)}`;
+    applyInputEdit(nextValue, start);
+  }
+
   function handleTerminalClick(event: React.MouseEvent<HTMLDivElement>) {
     if (isInteractiveTarget(event.target)) {
       return;
@@ -354,6 +477,7 @@ export function Terminal() {
     setInput("");
     setShowShortcuts(false);
     setSelectedSuggestion(0);
+    setPendingEscapeClear(false);
     setHistorySearchOpen(false);
     setHistorySearchQuery("");
     setHistorySearchIndex(0);
@@ -428,6 +552,7 @@ export function Terminal() {
     setHistory([]);
     setHistoryIndex(null);
     setHistoryDraft("");
+    setPendingEscapeClear(false);
     setScreenStartIndex(0);
     startTransition(() => {
       setMessages([]);
@@ -463,33 +588,30 @@ export function Terminal() {
       setHistoryDraft(input);
       const nextIndex = history.length - 1;
       setHistoryIndex(nextIndex);
-      setInput(history[nextIndex] ?? "");
-      setCursorPosition(textareaRef.current, (history[nextIndex] ?? "").length);
+      applyInputEdit(history[nextIndex] ?? "", (history[nextIndex] ?? "").length);
       return;
     }
 
     if (direction === "up") {
       const nextIndex = Math.max(0, historyIndex - 1);
       setHistoryIndex(nextIndex);
-      setInput(history[nextIndex] ?? "");
-      setCursorPosition(textareaRef.current, (history[nextIndex] ?? "").length);
+      applyInputEdit(history[nextIndex] ?? "", (history[nextIndex] ?? "").length);
       return;
     }
 
     const nextIndex = historyIndex + 1;
     if (nextIndex >= history.length) {
       setHistoryIndex(null);
-      setInput(historyDraft);
-      setCursorPosition(textareaRef.current, historyDraft.length);
+      applyInputEdit(historyDraft, historyDraft.length);
       return;
     }
 
     setHistoryIndex(nextIndex);
-    setInput(history[nextIndex] ?? "");
-    setCursorPosition(textareaRef.current, (history[nextIndex] ?? "").length);
+    applyInputEdit(history[nextIndex] ?? "", (history[nextIndex] ?? "").length);
   }
 
   function toggleHistorySearch() {
+    setPendingEscapeClear(false);
     if (!historySearchOpen) {
       setHistorySearchOpen(true);
       setHistorySearchQuery("");
@@ -505,27 +627,45 @@ export function Terminal() {
   }
 
   async function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    const closeHistorySearch = () => {
+      setHistorySearchOpen(false);
+      setHistorySearchQuery("");
+      setHistorySearchIndex(0);
+    };
+
     if (historySearchOpen) {
-      if (event.key === "Escape") {
+      if (
+        (event.key === "Escape" && !event.ctrlKey && !event.metaKey && !event.altKey) ||
+        (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey)
+      ) {
         event.preventDefault();
-        setHistorySearchOpen(false);
-        setHistorySearchQuery("");
-        setHistorySearchIndex(0);
+        if (activeHistoryMatch) {
+          applyInputEdit(activeHistoryMatch, activeHistoryMatch.length);
+        }
+        closeHistorySearch();
         return;
       }
 
       if (event.key === "Enter") {
         event.preventDefault();
         if (activeHistoryMatch) {
-          setInput(activeHistoryMatch);
-          setCursorPosition(textareaRef.current, activeHistoryMatch.length);
+          closeHistorySearch();
+          await submitText(activeHistoryMatch);
+          return;
         }
-        setHistorySearchOpen(false);
+        if (historySearchQuery.length === 0 && input.trim()) {
+          closeHistorySearch();
+          await submitText(input);
+        }
         return;
       }
 
       if (event.key === "Backspace") {
         event.preventDefault();
+        if (historySearchQuery.length === 0) {
+          closeHistorySearch();
+          return;
+        }
         setHistorySearchQuery((query) => query.slice(0, -1));
         setHistorySearchIndex(0);
         return;
@@ -537,12 +677,32 @@ export function Terminal() {
         return;
       }
 
+      if (event.ctrlKey && event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        closeHistorySearch();
+        return;
+      }
+
       if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key.length === 1) {
         event.preventDefault();
         setHistorySearchQuery((query) => query + event.key);
         setHistorySearchIndex(0);
       }
       return;
+    }
+
+    const lowerKey = event.key.toLowerCase();
+    const textarea = textareaRef.current;
+    const { start, end } = getSelectionRange(textarea);
+    const hasSelection = start !== end;
+    const isModifierOnly =
+      event.key === "Shift" ||
+      event.key === "Control" ||
+      event.key === "Alt" ||
+      event.key === "Meta";
+
+    if (pendingEscapeClear && event.key !== "Escape" && !isModifierOnly) {
+      setPendingEscapeClear(false);
     }
 
     if (event.ctrlKey && event.key.toLowerCase() === "c") {
@@ -559,21 +719,47 @@ export function Terminal() {
       return;
     }
 
-    if (event.ctrlKey && event.key.toLowerCase() === "l") {
+    if (
+      event.key === "Escape" &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      input.length > 0
+    ) {
+      event.preventDefault();
+      if (pendingEscapeClear) {
+        if (input.trim()) {
+          pushHistoryEntry(input);
+        }
+        applyInputEdit("", 0);
+        setPendingEscapeClear(false);
+      } else {
+        setPendingEscapeClear(true);
+      }
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "l") {
       event.preventDefault();
       setScreenStartIndex(messages.length);
       return;
     }
 
-    if (event.ctrlKey && event.key.toLowerCase() === "r") {
+    if (event.ctrlKey && lowerKey === "r") {
       event.preventDefault();
       toggleHistorySearch();
       return;
     }
 
-    if (event.ctrlKey && event.key.toLowerCase() === "o") {
+    if (event.ctrlKey && lowerKey === "o") {
       event.preventDefault();
       setVerboseOutput((value) => !value);
+      return;
+    }
+
+    if (event.altKey && !event.ctrlKey && !event.metaKey && lowerKey === "t") {
+      event.preventDefault();
+      setExtendedThinking((value) => !value);
       return;
     }
 
@@ -590,19 +776,148 @@ export function Terminal() {
       return;
     }
 
-    if (event.ctrlKey && event.key.toLowerCase() === "j") {
+    if (event.ctrlKey && lowerKey === "a") {
       event.preventDefault();
-      replaceSelection(textareaRef.current, input, setInput, "\n");
+      moveCursor(getLineStart(input, start));
       return;
     }
 
-    if (event.key === "ArrowDown" && suggestions.length > 0) {
+    if (event.ctrlKey && lowerKey === "e") {
+      event.preventDefault();
+      moveCursor(getLineEnd(input, end));
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "b") {
+      event.preventDefault();
+      moveCursor(hasSelection ? start : Math.max(0, start - 1));
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "f") {
+      event.preventDefault();
+      moveCursor(hasSelection ? end : Math.min(input.length, end + 1));
+      return;
+    }
+
+    if (
+      event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      (lowerKey === "b" || event.key === "ArrowLeft")
+    ) {
+      event.preventDefault();
+      moveCursor(findPreviousWordStart(input, start));
+      return;
+    }
+
+    if (
+      event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      (lowerKey === "f" || event.key === "ArrowRight")
+    ) {
+      event.preventDefault();
+      moveCursor(findNextWordStart(input, end));
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "h") {
+      event.preventDefault();
+      if (hasSelection) {
+        deleteSelectionOrRange(start, end);
+      } else if (start > 0) {
+        deleteSelectionOrRange(start - 1, start);
+      }
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "d") {
+      event.preventDefault();
+      if (hasSelection) {
+        deleteSelectionOrRange(start, end);
+      } else if (start < input.length) {
+        deleteSelectionOrRange(start, start + 1);
+      }
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "u") {
+      event.preventDefault();
+      if (hasSelection) {
+        deleteSelectionOrRange(start, end, true);
+      } else {
+        deleteSelectionOrRange(getLineStart(input, start), start, true);
+      }
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "k") {
+      event.preventDefault();
+      if (hasSelection) {
+        deleteSelectionOrRange(start, end, true);
+      } else {
+        deleteSelectionOrRange(end, getLineEnd(input, end), true);
+      }
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "w") {
+      event.preventDefault();
+      if (hasSelection) {
+        deleteSelectionOrRange(start, end, true);
+      } else {
+        deleteSelectionOrRange(findPreviousWordStart(input, start), start, true);
+      }
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "y") {
+      event.preventDefault();
+      if (killBufferRef.current.length > 0) {
+        insertTextAtSelection(killBufferRef.current);
+      }
+      return;
+    }
+
+    if (
+      event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      event.key === "Backspace"
+    ) {
+      event.preventDefault();
+      if (hasSelection) {
+        deleteSelectionOrRange(start, end, true);
+      } else {
+        deleteSelectionOrRange(findPreviousWordStart(input, start), start, true);
+      }
+      return;
+    }
+
+    if (event.altKey && !event.ctrlKey && !event.metaKey && lowerKey === "d") {
+      event.preventDefault();
+      if (hasSelection) {
+        deleteSelectionOrRange(start, end, true);
+      } else {
+        deleteSelectionOrRange(end, findNextWordStart(input, end), true);
+      }
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "j") {
+      event.preventDefault();
+      insertTextAtSelection("\n");
+      return;
+    }
+
+    if ((event.key === "ArrowDown" || (event.ctrlKey && lowerKey === "n")) && suggestions.length > 0) {
       event.preventDefault();
       setSelectedSuggestion((index) => (index + 1) % suggestions.length);
       return;
     }
 
-    if (event.key === "ArrowUp" && suggestions.length > 0) {
+    if ((event.key === "ArrowUp" || (event.ctrlKey && lowerKey === "p")) && suggestions.length > 0) {
       event.preventDefault();
       setSelectedSuggestion((index) =>
         index <= 0 ? suggestions.length - 1 : index - 1,
@@ -617,8 +932,19 @@ export function Terminal() {
         return;
       }
       const nextValue = `/${suggestion.name}`;
-      setInput(nextValue);
-      setCursorPosition(textareaRef.current, nextValue.length);
+      applyInputEdit(nextValue, nextValue.length);
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "p" && suggestions.length === 0) {
+      event.preventDefault();
+      navigateHistory("up");
+      return;
+    }
+
+    if (event.ctrlKey && lowerKey === "n" && suggestions.length === 0) {
+      event.preventDefault();
+      navigateHistory("down");
       return;
     }
 
@@ -651,13 +977,12 @@ export function Terminal() {
       suggestions.length === 0
     ) {
       event.preventDefault();
-      setExtendedThinking((value) => !value);
       return;
     }
 
     if (event.key === "Enter" && (event.shiftKey || event.altKey)) {
       event.preventDefault();
-      replaceSelection(textareaRef.current, input, setInput, "\n");
+      insertTextAtSelection("\n");
       return;
     }
 
@@ -672,7 +997,9 @@ export function Terminal() {
       input[Math.max(0, textareaRef.current.selectionStart - 1)] === "\\"
     ) {
       event.preventDefault();
-      replaceSelection(textareaRef.current, input, setInput, "\n", true);
+      const insertStart = Math.max(0, start - 1);
+      const nextValue = `${input.slice(0, insertStart)}\n${input.slice(end)}`;
+      applyInputEdit(nextValue, insertStart + 1);
       return;
     }
 
@@ -770,9 +1097,13 @@ export function Terminal() {
       onInputChange={(value) => {
         setInput(value);
         setSelectedSuggestion(0);
+        setPendingEscapeClear(false);
         if (error) {
           clearError();
         }
+      }}
+      onSelectionChange={(start, end) => {
+        setSelection({ start, end });
       }}
       onKeyDown={handleKeyDown}
       selectedSuggestion={selectedSuggestion}
@@ -786,6 +1117,8 @@ export function Terminal() {
         total: historyMatches.length,
       }}
       showShortcuts={effectiveShowShortcuts}
+      escapeClearPending={pendingEscapeClear}
+      selectionEnd={selection.end}
     />
   );
   const transcriptContent = (

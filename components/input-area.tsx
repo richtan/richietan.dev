@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { CLAUDE_FOOTER_STATUS, SLASH_COMMANDS } from "@/lib/constants";
+import { getPromptHelpMenuColumns } from "@/lib/terminal-shortcuts";
 
 interface HistorySearchState {
   open: boolean;
@@ -16,27 +17,27 @@ interface InputAreaProps {
   isLoading: boolean;
   input: string;
   onInputChange: (value: string) => void;
+  onSelectionChange: (start: number, end: number) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   selectedSuggestion: number;
   suggestions: ReadonlyArray<(typeof SLASH_COMMANDS)[number]>;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   historySearch: HistorySearchState;
   showShortcuts: boolean;
+  escapeClearPending: boolean;
+  selectionEnd: number;
 }
-
-const SHORTCUT_ROWS = [
-  ["! for bash mode", "double tap esc to clear input", "ctrl + shift + - to undo"],
-  ["/ for commands", "shift + tab to auto-accept edits", "ctrl + z to suspend"],
-  ["@ for file paths", "ctrl + o for verbose output", "ctrl + v to paste images"],
-  ["& for background", "ctrl + t to toggle tasks", "meta + p to switch model"],
-  ["/btw for side question", "shift + ↵ for newline", "meta + o to toggle fast mode"],
-  ["", "", "ctrl + s to stash prompt"],
-  ["", "", "ctrl + g to edit in $EDITOR"],
-  ["", "", "/keybindings to customize"],
-] as const;
 
 function padRight(value: string, width: number) {
   return value + " ".repeat(Math.max(0, width - value.length));
+}
+
+function PromptBorderRow() {
+  return (
+    <div className="flex h-[1.2em] items-center">
+      <div className="h-px w-full bg-cc-border" />
+    </div>
+  );
 }
 
 export function InputArea({
@@ -44,12 +45,15 @@ export function InputArea({
   isLoading,
   input,
   onInputChange,
+  onSelectionChange,
   onKeyDown,
   selectedSuggestion,
   suggestions,
   textareaRef,
   historySearch,
   showShortcuts,
+  escapeClearPending,
+  selectionEnd,
 }: InputAreaProps) {
   useEffect(() => {
     if (!disabled) {
@@ -65,18 +69,24 @@ export function InputArea({
   }, [suggestions]);
 
   const shortcutColumns = useMemo(
-    () =>
-      SHORTCUT_ROWS[0].map((_, columnIndex) =>
-        SHORTCUT_ROWS.reduce(
-          (width, row) => Math.max(width, row[columnIndex]?.length ?? 0),
-          0,
-        ),
-      ),
+    () => getPromptHelpMenuColumns({ supportsThinkingToggle: true }),
     [],
   );
+  const shortcutRowCount = useMemo(
+    () => Math.max(...shortcutColumns.map((column) => column.length)),
+    [shortcutColumns],
+  );
 
-  const footerLeft = isLoading ? "esc to interrupt" : "? for shortcuts";
+  const footerLeft = isLoading
+    ? "esc to interrupt"
+    : escapeClearPending
+      ? "esc again to clear"
+      : "? for shortcuts";
   const footerRight = isLoading ? "" : CLAUDE_FOOTER_STATUS;
+  const cursorPosition = Math.max(0, Math.min(input.length, selectionEnd));
+  const beforeCursor = input.slice(0, cursorPosition);
+  const cursorCharacter = input[cursorPosition] ?? " ";
+  const afterCursor = input.slice(Math.min(input.length, cursorPosition + 1));
 
   return (
     <div className="shrink-0">
@@ -91,22 +101,43 @@ export function InputArea({
       ) : null}
 
       <div
-        className="relative cursor-text border-t border-b border-cc-border bg-transparent"
+        className="relative cursor-text bg-transparent"
         onPointerDown={(event) => {
           event.preventDefault();
           textareaRef.current?.focus({ preventScroll: true });
         }}
       >
-        <div className="flex items-start px-2 py-1">
-          <span className="w-4 shrink-0 select-none text-cc-text">❯</span>
+        <PromptBorderRow />
+        <div className="flex min-h-[1.2em] items-start px-2">
+          <span className="w-[3ch] shrink-0 select-none whitespace-pre text-cc-text">
+            ❯{" "}
+          </span>
           <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-cc-text">
-            {input}
-            {!disabled ? <span className="select-none text-cc-text">█</span> : " "}
+            {beforeCursor}
+            {!disabled ? (
+              <span className="select-none bg-cc-text text-cc-bg">
+                {cursorCharacter === " " ? "\u00A0" : cursorCharacter}
+              </span>
+            ) : null}
+            {afterCursor}
+            {disabled && input.length === 0 ? " " : null}
           </div>
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(event) => onInputChange(event.target.value)}
+            onChange={(event) => {
+              onInputChange(event.target.value);
+              onSelectionChange(
+                event.target.selectionStart,
+                event.target.selectionEnd,
+              );
+            }}
+            onSelect={(event) => {
+              onSelectionChange(
+                event.currentTarget.selectionStart,
+                event.currentTarget.selectionEnd,
+              );
+            }}
             onKeyDown={onKeyDown}
             className="pointer-events-none absolute inset-0 h-full w-full resize-none overflow-hidden bg-transparent opacity-0 outline-none"
             rows={Math.max(1, input.split("\n").length)}
@@ -115,22 +146,23 @@ export function InputArea({
             autoComplete="off"
           />
         </div>
+        <PromptBorderRow />
       </div>
 
       {showShortcuts && suggestions.length === 0 ? (
-        <div className="mt-1 grid grid-cols-[24ch_35ch_1fr] gap-x-2 px-2 text-cc-secondary">
-          {shortcutColumns.map((_, columnIndex) => (
+        <div className="grid grid-cols-[24ch_35ch_1fr] gap-x-2 px-2 text-cc-secondary">
+          {shortcutColumns.map((column, columnIndex) => (
             <div key={`shortcut-col-${columnIndex}`} className="min-w-0">
-              {SHORTCUT_ROWS.map((row, rowIndex) => (
+              {Array.from({ length: shortcutRowCount }, (_, rowIndex) => (
                 <div key={`shortcut-${columnIndex}-${rowIndex}`}>
-                  {row[columnIndex] || "\u00A0"}
+                  {column[rowIndex] || "\u00A0"}
                 </div>
               ))}
             </div>
           ))}
         </div>
       ) : suggestions.length > 0 ? (
-        <div className="mt-1 px-2">
+        <div className="px-2">
           {suggestions.map((command, index) => {
             const selected = index === selectedSuggestion;
             const name = `/${command.name}`;
@@ -152,7 +184,7 @@ export function InputArea({
           })}
         </div>
       ) : (
-        <div className="mt-1 flex items-center justify-between px-2 text-cc-secondary">
+        <div className="flex h-[1.2em] items-center justify-between px-2 text-cc-secondary">
           <span>{footerLeft}</span>
           {footerRight ? <span>{footerRight}</span> : <span />}
         </div>
