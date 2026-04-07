@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import {
-  CLAUDE_FOOTER_STATUS,
-  SLASH_COMMANDS,
-} from "@/lib/constants";
+import { CLAUDE_FOOTER_STATUS, SLASH_COMMANDS } from "@/lib/constants";
 
 interface HistorySearchState {
   open: boolean;
@@ -27,10 +24,6 @@ interface InputAreaProps {
   showShortcuts: boolean;
 }
 
-function padRight(value: string, width: number) {
-  return value + " ".repeat(Math.max(0, width - value.length));
-}
-
 const SHORTCUT_ROWS = [
   ["! for bash mode", "double tap esc to clear input", "ctrl + shift + - to undo"],
   ["/ for commands", "shift + tab to auto-accept edits", "ctrl + z to suspend"],
@@ -41,6 +34,10 @@ const SHORTCUT_ROWS = [
   ["", "", "ctrl + g to edit in $EDITOR"],
   ["", "", "/keybindings to customize"],
 ] as const;
+
+function padRight(value: string, width: number) {
+  return value + " ".repeat(Math.max(0, width - value.length));
+}
 
 export function InputArea({
   disabled,
@@ -61,19 +58,13 @@ export function InputArea({
   }, [disabled, textareaRef]);
 
   const suggestionWidth = useMemo(() => {
-    const names = suggestions.map((command) => `/${command.name}`);
-    const maxWidth = names.reduce(
-      (width, name) => Math.max(width, name.length),
-      12,
+    return Math.max(
+      18,
+      ...suggestions.map((command) => `/${command.name}`.length + 2),
     );
-    return maxWidth + 2;
   }, [suggestions]);
 
-  const showCaret = !disabled;
-  const promptBody = input || "";
-  const footerLeft = isLoading ? "esc to interrupt" : "? for shortcuts";
-  const footerRight = isLoading ? "" : CLAUDE_FOOTER_STATUS;
-  const shortcutColumnWidths = useMemo(
+  const shortcutColumns = useMemo(
     () =>
       SHORTCUT_ROWS[0].map((_, columnIndex) =>
         SHORTCUT_ROWS.reduce(
@@ -83,44 +74,35 @@ export function InputArea({
       ),
     [],
   );
-  const shortcutText = useMemo(
-    () =>
-      SHORTCUT_ROWS.map((row) =>
-        row
-          .map((cell, columnIndex) =>
-            columnIndex === row.length - 1
-              ? cell
-              : padRight(cell, (shortcutColumnWidths[columnIndex] ?? cell.length) + 2),
-          )
-          .join(""),
-      ).join("\n"),
-    [shortcutColumnWidths],
-  );
+
+  const footerLeft = isLoading ? "esc to interrupt" : "? for shortcuts";
+  const footerRight = isLoading ? "" : CLAUDE_FOOTER_STATUS;
 
   return (
     <div className="shrink-0">
       {historySearch.open ? (
-        <pre className="mb-1 whitespace-pre-wrap break-words px-1 text-cc-secondary">
+        <div className="mb-1 px-2 text-cc-secondary">
           <span className="text-cc-permission">(reverse-i-search)</span>{" "}
           <span className="text-cc-text">{historySearch.query || "_"}</span>
           {historySearch.match
             ? `: ${historySearch.match} (${historySearch.current}/${historySearch.total})`
             : ": no matches"}
-        </pre>
+        </div>
       ) : null}
 
       <div
-        className="relative cursor-text border-t border-b border-cc-border/90"
-        onClick={() => {
+        className="relative cursor-text border-t border-b border-cc-border bg-transparent"
+        onPointerDown={(event) => {
+          event.preventDefault();
           textareaRef.current?.focus({ preventScroll: true });
         }}
       >
-        <div className="flex items-baseline bg-transparent px-1 py-1">
-          <div className="w-4 shrink-0 select-none text-cc-text">❯</div>
-          <pre className="m-0 min-h-[1.2em] min-w-0 flex-1 whitespace-pre-wrap break-words text-cc-text">
-            {promptBody}
-            {showCaret ? <span className="select-none text-cc-text">█</span> : " "}
-          </pre>
+        <div className="flex items-start px-2 py-1">
+          <span className="w-4 shrink-0 select-none text-cc-text">❯</span>
+          <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-cc-text">
+            {input}
+            {!disabled ? <span className="select-none text-cc-text">█</span> : " "}
+          </div>
           <textarea
             ref={textareaRef}
             value={input}
@@ -136,27 +118,41 @@ export function InputArea({
       </div>
 
       {showShortcuts && suggestions.length === 0 ? (
-        <pre className="mt-1 whitespace-pre-wrap break-words px-1 text-cc-secondary">
-          {shortcutText}
-        </pre>
+        <div className="mt-1 grid grid-cols-[24ch_35ch_1fr] gap-x-2 px-2 text-cc-secondary">
+          {shortcutColumns.map((_, columnIndex) => (
+            <div key={`shortcut-col-${columnIndex}`} className="min-w-0">
+              {SHORTCUT_ROWS.map((row, rowIndex) => (
+                <div key={`shortcut-${columnIndex}-${rowIndex}`}>
+                  {row[columnIndex] || "\u00A0"}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       ) : suggestions.length > 0 ? (
-        <pre className="mt-1 whitespace-pre-wrap break-words px-1">
+        <div className="mt-1 px-2">
           {suggestions.map((command, index) => {
             const selected = index === selectedSuggestion;
-            const line = `  /${padRight(command.name, suggestionWidth - 1)}${command.description}`;
+            const name = `/${command.name}`;
             return (
-              <span
+              <div
                 key={command.name}
-                className={selected ? "text-cc-suggestion" : "text-cc-secondary/60"}
+                className={`flex min-w-0 ${
+                  selected ? "text-cc-suggestion" : "text-cc-secondary"
+                }`}
               >
-                {line}
-                {"\n"}
-              </span>
+                <span className="shrink-0 whitespace-pre">
+                  {padRight(name, suggestionWidth)}
+                </span>
+                <span className={selected ? "text-cc-suggestion" : "text-cc-secondary/80"}>
+                  {command.description}
+                </span>
+              </div>
             );
           })}
-        </pre>
+        </div>
       ) : (
-        <div className="mt-1 flex items-center justify-between px-1 text-cc-secondary/65">
+        <div className="mt-1 flex items-center justify-between px-2 text-cc-secondary">
           <span>{footerLeft}</span>
           {footerRight ? <span>{footerRight}</span> : <span />}
         </div>

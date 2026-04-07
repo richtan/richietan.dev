@@ -5,19 +5,23 @@
   --font-terminal: var(--font-hack-nerd-mono);
   --font-mono: var(--font-terminal);
 
-  --color-cc-claude: #d57a58;
+  --color-cc-claude: rgb(215, 119, 87);
   --color-cc-bg: #171a1f;
   --color-cc-panel: #1b2026;
-  --color-cc-rail: #3f3f41;
-  --color-cc-text: #e7e8eb;
-  --color-cc-secondary: #84878d;
-  --color-cc-border: #6d7178;
+  --color-cc-rail: rgb(55, 55, 55);
+  --color-cc-user-message: rgb(55, 55, 55);
+  --color-cc-user-message-hover: rgb(70, 70, 70);
+  --color-cc-message-actions: rgb(44, 50, 62);
+  --color-cc-text: rgb(255, 255, 255);
+  --color-cc-secondary: rgb(153, 153, 153);
+  --color-cc-subtle: rgb(80, 80, 80);
+  --color-cc-border: rgb(136, 136, 136);
   --color-cc-bash: #fd5db1;
-  --color-cc-permission: #b1b9f9;
-  --color-cc-suggestion: #b1b9f9;
-  --color-cc-success: #4eba65;
-  --color-cc-error: #ff6b80;
-  --color-cc-warning: #ffc107;
+  --color-cc-permission: rgb(177, 185, 249);
+  --color-cc-suggestion: rgb(177, 185, 249);
+  --color-cc-success: rgb(78, 186, 101);
+  --color-cc-error: rgb(255, 107, 128);
+  --color-cc-warning: rgb(255, 193, 7);
 }
 
 html,
@@ -62,7 +66,7 @@ body {
 }
 
 ::selection {
-  background: rgba(217, 119, 87, 0.3);
+  background: rgb(38 79 120 / 1);
 }
 
 @keyframes windowOpen {
@@ -88,4 +92,49 @@ body {
 }
 .animate-blink-dot {
   animation: blink-dot 600ms step-end infinite;
+}
+
+.cc-code-block .hljs {
+  color: var(--color-cc-text);
+}
+
+.cc-code-block .hljs-keyword,
+.cc-code-block .hljs-selector-tag,
+.cc-code-block .hljs-literal,
+.cc-code-block .hljs-section,
+.cc-code-block .hljs-link {
+  color: rgb(245 139 87);
+}
+
+.cc-code-block .hljs-string,
+.cc-code-block .hljs-title,
+.cc-code-block .hljs-name,
+.cc-code-block .hljs-type,
+.cc-code-block .hljs-attribute,
+.cc-code-block .hljs-symbol,
+.cc-code-block .hljs-bullet,
+.cc-code-block .hljs-addition,
+.cc-code-block .hljs-template-tag,
+.cc-code-block .hljs-template-variable {
+  color: rgb(145 200 130);
+}
+
+.cc-code-block .hljs-number,
+.cc-code-block .hljs-regexp,
+.cc-code-block .hljs-meta .hljs-string {
+  color: rgb(250 195 95);
+}
+
+.cc-code-block .hljs-comment,
+.cc-code-block .hljs-quote,
+.cc-code-block .hljs-deletion {
+  color: var(--color-cc-secondary);
+}
+
+.cc-code-block .hljs-variable,
+.cc-code-block .hljs-params,
+.cc-code-block .hljs-property,
+.cc-code-block .hljs-built_in,
+.cc-code-block .hljs-function {
+  color: rgb(130 170 220);
 }

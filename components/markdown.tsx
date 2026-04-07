@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import hljs from "highlight.js";
+import { Fragment, useMemo } from "react";
 import { marked, type Token, type Tokens } from "marked";
 
 type MarkdownProps = {
@@ -9,7 +10,14 @@ type MarkdownProps = {
   dimColor?: boolean;
 };
 
-type SemanticTone = "text" | "subtle" | "permission" | "suggestion";
+type SemanticTone =
+  | "text"
+  | "subtle"
+  | "permission"
+  | "suggestion"
+  | "success"
+  | "error"
+  | "warning";
 
 type SegmentStyle = {
   tone?: SemanticTone;
@@ -32,6 +40,20 @@ type Newline = {
 
 type Piece = Segment | Newline;
 
+type RenderBlock =
+  | {
+      type: "segments";
+      pieces: Piece[];
+    }
+  | {
+      type: "code";
+      html: string;
+    }
+  | {
+      type: "table";
+      token: Tokens.Table;
+    };
+
 const EOL = "\n";
 const BLOCKQUOTE_BAR = "▎";
 const TOKEN_CACHE_MAX = 500;
@@ -41,6 +63,7 @@ const MD_SYNTAX_RE = /[#*`|[>\-_~]|\n\n|^\d+\. |\n\d+\. /;
 const NEWLINE: Newline = { type: "newline" };
 const DEFAULT_STYLE: SegmentStyle = { tone: "text" };
 const tokenCache = new Map<string, Token[]>();
+const streamingPrefixCache = new Map<string, string>();
 
 let markedConfigured = false;
 
@@ -59,7 +82,7 @@ function configureMarked() {
   });
 }
 
-function stripSystemMessages(content: string) {
+function stripPromptXMLTags(content: string) {
   return content
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
     .replace(/<system-reminder\s*\/>/g, "")
@@ -68,6 +91,43 @@ function stripSystemMessages(content: string) {
 
 function hasMarkdownSyntax(value: string) {
   return MD_SYNTAX_RE.test(value.length > 500 ? value.slice(0, 500) : value);
+}
+
+function hashContent(content: string) {
+  let hash = 5381;
+  for (let index = 0; index < content.length; index += 1) {
+    hash = (hash * 33) ^ content.charCodeAt(index);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function cacheStreamingPrefix(content: string, stablePrefix: string) {
+  const key = hashContent(content);
+  if (streamingPrefixCache.size >= TOKEN_CACHE_MAX) {
+    const firstKey = streamingPrefixCache.keys().next().value;
+    if (firstKey !== undefined) {
+      streamingPrefixCache.delete(firstKey);
+    }
+  }
+  streamingPrefixCache.set(key, stablePrefix);
+}
+
+function getCachedStreamingPrefix(content: string) {
+  let best = "";
+
+  for (const stablePrefix of streamingPrefixCache.values()) {
+    if (!stablePrefix || stablePrefix.length <= best.length) {
+      continue;
+    }
+
+    if (!content.startsWith(stablePrefix)) {
+      continue;
+    }
+
+    best = stablePrefix;
+  }
+
+  return best;
 }
 
 function cachedLexer(content: string) {
@@ -88,10 +148,11 @@ function cachedLexer(content: string) {
     ];
   }
 
-  const hit = tokenCache.get(content);
+  const key = hashContent(content);
+  const hit = tokenCache.get(key);
   if (hit) {
-    tokenCache.delete(content);
-    tokenCache.set(content, hit);
+    tokenCache.delete(key);
+    tokenCache.set(key, hit);
     return hit;
   }
 
@@ -102,8 +163,21 @@ function cachedLexer(content: string) {
       tokenCache.delete(firstKey);
     }
   }
-  tokenCache.set(content, tokens);
+  tokenCache.set(key, tokens);
   return tokens;
+}
+
+function escapeHtml(text: string) {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function stringWidth(text: string) {
+  return Array.from(text).length;
 }
 
 function stylesEqual(a: SegmentStyle, b: SegmentStyle) {
@@ -149,12 +223,6 @@ function appendText(
 function appendPieces(target: Piece[], pieces: Piece[]) {
   pieces.forEach((piece) => {
     if (piece.type === "newline") {
-      const previous = target[target.length - 1];
-      if (previous?.type === "newline") {
-        target.push(piece);
-        return;
-      }
-
       target.push(piece);
       return;
     }
@@ -177,12 +245,6 @@ function applyStyle(pieces: Piece[], patch: SegmentStyle): Piece[] {
   );
 }
 
-function piecesToPlainText(pieces: Piece[]) {
-  return pieces
-    .map((piece) => (piece.type === "text" ? piece.text : EOL))
-    .join("");
-}
-
 function splitPiecesIntoLines(pieces: Piece[]) {
   const lines: Piece[][] = [[]];
 
@@ -198,7 +260,7 @@ function splitPiecesIntoLines(pieces: Piece[]) {
   return lines;
 }
 
-function prefixLines(pieces: Piece[], prefix: string) {
+function prefixLines(pieces: Piece[], prefix: string, style: SegmentStyle = DEFAULT_STYLE) {
   if (!prefix) {
     return pieces;
   }
@@ -212,7 +274,7 @@ function prefixLines(pieces: Piece[], prefix: string) {
     }
 
     if (line.length > 0) {
-      appendText(result, prefix);
+      appendText(result, prefix, style);
     }
 
     appendPieces(result, line);
@@ -260,14 +322,11 @@ function renderTextRuns(text: string, style: SegmentStyle = DEFAULT_STYLE): Piec
         appendText(
           pieces,
           `${repo}#${issueNumber}`,
-          {
-            ...style,
-            tone: "suggestion",
-          },
+          { ...style, tone: "suggestion" },
           `https://github.com/${repo}/issues/${issueNumber}`,
         );
       } else {
-        appendText(pieces, fullMatch, style);
+        appendText(pieces, fullMatch.slice(prefix.length), style);
       }
 
       cursor = start + fullMatch.length;
@@ -281,14 +340,12 @@ function renderTextRuns(text: string, style: SegmentStyle = DEFAULT_STYLE): Piec
 
 function numberToLetter(n: number): string {
   let result = "";
-  let value = n;
-
-  while (value > 0) {
-    value -= 1;
-    result = String.fromCharCode(97 + (value % 26)) + result;
-    value = Math.floor(value / 26);
+  let current = n;
+  while (current > 0) {
+    current -= 1;
+    result = String.fromCharCode(97 + (current % 26)) + result;
+    current = Math.floor(current / 26);
   }
-
   return result;
 }
 
@@ -308,14 +365,14 @@ const ROMAN_VALUES: ReadonlyArray<[number, string]> = [
   [1, "i"],
 ];
 
-function numberToRoman(n: number) {
+function numberToRoman(n: number): string {
   let result = "";
-  let value = n;
+  let current = n;
 
-  for (const [romanValue, numeral] of ROMAN_VALUES) {
-    while (value >= romanValue) {
+  for (const [value, numeral] of ROMAN_VALUES) {
+    while (current >= value) {
       result += numeral;
-      value -= romanValue;
+      current -= value;
     }
   }
 
@@ -336,6 +393,201 @@ function getListNumber(listDepth: number, orderedListNumber: number): string {
   }
 }
 
+function piecesToPlainText(pieces: Piece[]) {
+  return pieces
+    .map((piece) => (piece.type === "text" ? piece.text : EOL))
+    .join("");
+}
+
+function formatToken(
+  token: Token,
+  listDepth = 0,
+  orderedListNumber: number | null = null,
+  parent: Token | null = null,
+): Piece[] {
+  switch (token.type) {
+    case "blockquote": {
+      const inner = (token.tokens ?? [])
+        .flatMap((child) => formatToken(child, 0, null, null));
+      const prefixed = prefixLines(inner, `${BLOCKQUOTE_BAR} `, {
+        tone: "subtle",
+      });
+      return applyStyle(prefixed, { italic: true });
+    }
+
+    case "codespan":
+      return renderTextRuns(token.text, { tone: "permission" });
+
+    case "em":
+      return applyStyle(
+        (token.tokens ?? []).flatMap((child) =>
+          formatToken(child, listDepth, orderedListNumber, parent),
+        ),
+        { italic: true },
+      );
+
+    case "strong":
+      return applyStyle(
+        (token.tokens ?? []).flatMap((child) =>
+          formatToken(child, listDepth, orderedListNumber, parent),
+        ),
+        { bold: true },
+      );
+
+    case "heading":
+      return [
+        ...applyStyle(
+          (token.tokens ?? []).flatMap((child) => formatToken(child, 0, null, null)),
+          {
+            bold: true,
+            italic: token.depth === 1,
+            underline: token.depth === 1,
+          },
+        ),
+        NEWLINE,
+        NEWLINE,
+      ];
+
+    case "hr":
+      return [...renderTextRuns("---"), NEWLINE];
+
+    case "image":
+      return renderTextRuns(token.href, { tone: "suggestion" });
+
+    case "link": {
+      if (token.href.startsWith("mailto:")) {
+        return renderTextRuns(token.href.replace(/^mailto:/, ""));
+      }
+
+      const linkPieces = (token.tokens ?? []).flatMap((child) =>
+        formatToken(child, listDepth, orderedListNumber, token),
+      );
+      const linkText = piecesToPlainText(linkPieces);
+
+      if (linkText && linkText !== token.href) {
+        return wrapLinkPieces(linkPieces, token.href);
+      }
+
+      return [
+        {
+          type: "text",
+          text: token.href,
+          href: token.href,
+          style: { tone: "suggestion" },
+        },
+      ];
+    }
+
+    case "list":
+      return token.items.flatMap((child: Token, index: number) =>
+        formatToken(
+          child,
+          listDepth,
+          token.ordered ? token.start + index : null,
+          token,
+        ),
+      );
+
+    case "list_item":
+      return (token.tokens ?? []).flatMap((child) =>
+        prefixLines(
+          formatToken(child, listDepth + 1, orderedListNumber, token),
+          "  ".repeat(listDepth),
+        ),
+      );
+
+    case "paragraph":
+      return [
+        ...(token.tokens ?? []).flatMap((child) =>
+          formatToken(child, 0, null, null),
+        ),
+        NEWLINE,
+      ];
+
+    case "space":
+    case "br":
+      return [NEWLINE];
+
+    case "text":
+      if (parent?.type === "link") {
+        return renderTextRuns(token.text);
+      }
+
+      if (parent?.type === "list_item") {
+        const prefix =
+          orderedListNumber === null
+            ? "- "
+            : `${getListNumber(listDepth, orderedListNumber)}. `;
+        return [
+          ...renderTextRuns(
+            `${prefix}${
+              token.tokens
+                ? piecesToPlainText(
+                    token.tokens.flatMap((child) =>
+                      formatToken(child, listDepth, orderedListNumber, token),
+                    ),
+                  )
+                : token.text
+            }`,
+          ),
+          NEWLINE,
+        ];
+      }
+
+      if (token.tokens) {
+        return token.tokens.flatMap((child) =>
+          formatToken(child, listDepth, orderedListNumber, token),
+        );
+      }
+
+      return renderTextRuns(token.text);
+
+    case "escape":
+      return renderTextRuns(token.text);
+
+    case "def":
+    case "del":
+    case "html":
+      return [];
+
+    default:
+      return [];
+  }
+}
+
+function trimPieces(pieces: Piece[]) {
+  const next = pieces
+    .map((piece) =>
+      piece.type === "text"
+        ? {
+            ...piece,
+            text: piece.text,
+          }
+        : piece,
+    )
+    .filter((piece) => piece.type === "newline" || piece.text.length > 0);
+
+  while (next[0]?.type === "newline") {
+    next.shift();
+  }
+
+  while (next[next.length - 1]?.type === "newline") {
+    next.pop();
+  }
+
+  const first = next[0];
+  if (first?.type === "text") {
+    first.text = first.text.trimStart();
+  }
+
+  const last = next[next.length - 1];
+  if (last?.type === "text") {
+    last.text = last.text.trimEnd();
+  }
+
+  return next.filter((piece) => piece.type === "newline" || piece.text.length > 0);
+}
+
 function padAligned(
   content: string,
   displayWidth: number,
@@ -353,338 +605,191 @@ function padAligned(
   return content + " ".repeat(padding);
 }
 
-function displayWidth(text: string) {
-  return Array.from(text).length;
+function getCellText(tokens: Token[] | undefined) {
+  return piecesToPlainText(
+    (tokens ?? []).flatMap((token) => formatToken(token, 0, null, null)),
+  );
 }
 
-function formatTableText(token: Tokens.Table): string {
-  const getDisplayText = (tokens: Token[] | undefined) =>
-    piecesToPlainText(formatTokens(tokens ?? [])).replace(/\n+$/g, "");
-
+function formatTableText(token: Tokens.Table) {
   const columnWidths = token.header.map((header, index) => {
-    let maxWidth = displayWidth(getDisplayText(header.tokens));
+    let maxWidth = stringWidth(getCellText(header.tokens));
     for (const row of token.rows) {
-      maxWidth = Math.max(maxWidth, displayWidth(getDisplayText(row[index]?.tokens)));
+      maxWidth = Math.max(maxWidth, stringWidth(getCellText(row[index]?.tokens)));
     }
     return Math.max(maxWidth, 3);
   });
 
-  let output = "┌";
-  columnWidths.forEach((width, index) => {
-    output += "─".repeat(width + 2);
-    output += index < columnWidths.length - 1 ? "┬" : "┐";
-  });
-  output += EOL;
-
-  output += "│ ";
+  let output = "| ";
   token.header.forEach((header, index) => {
-    const text = getDisplayText(header.tokens);
-    output += padAligned(text, displayWidth(text), columnWidths[index]!, "center") + " │ ";
+    const content = getCellText(header.tokens);
+    output +=
+      padAligned(
+        content,
+        stringWidth(content),
+        columnWidths[index]!,
+        token.align?.[index],
+      ) + " | ";
   });
   output = output.trimEnd() + EOL;
 
-  output += "├";
-  columnWidths.forEach((width, index) => {
-    output += "─".repeat(width + 2);
-    output += index < columnWidths.length - 1 ? "┼" : "┤";
+  output += "|";
+  columnWidths.forEach((width) => {
+    output += `${"-".repeat(width + 2)}|`;
   });
   output += EOL;
 
   token.rows.forEach((row) => {
-    output += "│ ";
+    output += "| ";
     row.forEach((cell, index) => {
-      const text = getDisplayText(cell.tokens);
+      const content = getCellText(cell.tokens);
       output +=
         padAligned(
-          text,
-          displayWidth(text),
+          content,
+          stringWidth(content),
           columnWidths[index]!,
           token.align?.[index],
-        ) + " │ ";
+        ) + " | ";
     });
     output = output.trimEnd() + EOL;
   });
 
-  output += "└";
-  columnWidths.forEach((width, index) => {
-    output += "─".repeat(width + 2);
-    output += index < columnWidths.length - 1 ? "┴" : "┘";
-  });
-
-  return output;
+  return output.trimEnd();
 }
 
-function prefixBlockquote(pieces: Piece[]) {
-  const result: Piece[] = [];
-  const lines = splitPiecesIntoLines(pieces);
+function createCodeMarkup(text: string, language?: string) {
+  if (language && hljs.getLanguage(language)) {
+    return hljs.highlight(text, { language }).value;
+  }
 
-  lines.forEach((line, index) => {
-    if (index > 0) {
-      result.push(NEWLINE);
-    }
-
-    const visible = piecesToPlainText(line).trim();
-    if (!visible) {
-      return;
-    }
-
-    appendText(result, BLOCKQUOTE_BAR, { tone: "subtle", dim: true });
-    appendText(result, " ", { tone: "subtle", dim: true });
-    appendPieces(result, applyStyle(line, { italic: true }));
-  });
-
-  return result;
+  return escapeHtml(text);
 }
 
-function formatInlineTokens(
-  tokens: Token[],
-  parent: Token | null,
-  listDepth = 0,
-  orderedListNumber: number | null = null,
-) {
-  const pieces: Piece[] = [];
+function buildBlocks(content: string): RenderBlock[] {
+  configureMarked();
 
-  tokens.forEach((token) => {
-    appendPieces(
-      pieces,
-      formatToken(token, listDepth, orderedListNumber, parent),
-    );
-  });
+  const tokens = cachedLexer(stripPromptXMLTags(content));
+  const blocks: RenderBlock[] = [];
+  let currentPieces: Piece[] = [];
 
-  return pieces;
+  const flushPieces = () => {
+    const trimmed = trimPieces(currentPieces);
+    currentPieces = [];
+
+    if (trimmed.length > 0) {
+      blocks.push({ type: "segments", pieces: trimmed });
+    }
+  };
+
+  for (const token of tokens) {
+    if (token.type === "table") {
+      flushPieces();
+      blocks.push({ type: "table", token: token as Tokens.Table });
+      continue;
+    }
+
+    if (token.type === "code") {
+      flushPieces();
+      blocks.push({
+        type: "code",
+        html: createCodeMarkup(token.text, token.lang ?? undefined),
+      });
+      continue;
+    }
+
+    appendPieces(currentPieces, formatToken(token));
+  }
+
+  flushPieces();
+  return blocks;
 }
 
-function formatToken(
-  token: Token,
-  listDepth = 0,
-  orderedListNumber: number | null = null,
-  parent: Token | null = null,
-): Piece[] {
-  switch (token.type) {
-    case "blockquote": {
-      const inner = formatInlineTokens(token.tokens ?? [], null);
-      return prefixBlockquote(inner);
-    }
-
-    case "code":
-      return [...renderTextRuns(token.text), NEWLINE];
-
-    case "codespan":
-      return renderTextRuns(token.text, { tone: "permission" });
-
-    case "em":
-      return applyStyle(
-        formatInlineTokens(token.tokens ?? [], parent, listDepth, orderedListNumber),
-        { italic: true },
-      );
-
-    case "strong":
-      return applyStyle(
-        formatInlineTokens(token.tokens ?? [], parent, listDepth, orderedListNumber),
-        { bold: true },
-      );
-
-    case "heading": {
-      const headingPieces = formatInlineTokens(token.tokens ?? [], null);
-      const styled = applyStyle(
-        headingPieces,
-        token.depth === 1
-          ? { bold: true, italic: true, underline: true }
-          : { bold: true },
-      );
-      return [...styled, NEWLINE, NEWLINE];
-    }
-
-    case "hr":
-      return renderTextRuns("---");
-
-    case "image":
-      return renderTextRuns(token.href ?? "");
-
-    case "link": {
-      if (token.href.startsWith("mailto:")) {
-        return renderTextRuns(token.href.replace(/^mailto:/, ""));
-      }
-
-      const linkPieces = formatInlineTokens(token.tokens ?? [], token);
-      const plainLinkText = piecesToPlainText(linkPieces);
-
-      if (plainLinkText && plainLinkText !== token.href) {
-        return wrapLinkPieces(linkPieces, token.href);
-      }
-
-      return [
-        {
-          type: "text",
-          text: token.href,
-          href: token.href,
-          style: {
-            tone: "suggestion",
-          },
-        },
-      ];
-    }
-
-    case "list":
-      return token.items.flatMap((item: Token, index: number) =>
-        formatToken(
-          item,
-          listDepth,
-          token.ordered ? token.start + index : null,
-          token,
-        ),
-      );
-
-    case "list_item":
-      return (token.tokens ?? []).flatMap((child) =>
-        prefixLines(
-          formatToken(child, listDepth + 1, orderedListNumber, token),
-          "  ".repeat(listDepth),
-        ),
-      );
-
-    case "paragraph":
-      return [...formatInlineTokens(token.tokens ?? [], null), NEWLINE];
-
-    case "space":
-    case "br":
-      return [NEWLINE];
-
-    case "text":
-      if (parent?.type === "link") {
-        return renderTextRuns(token.text);
-      }
-
-      if (parent?.type === "list_item") {
-        const content = token.tokens?.length
-          ? formatInlineTokens(token.tokens, token, listDepth, orderedListNumber)
-          : renderTextRuns(token.text);
-
-        return [
-          ...renderTextRuns(
-            `${orderedListNumber === null ? "-" : `${getListNumber(listDepth, orderedListNumber)}.`} `,
-          ),
-          ...content,
-          NEWLINE,
-        ];
-      }
-
-      return token.tokens?.length
-        ? formatInlineTokens(token.tokens, token, listDepth, orderedListNumber)
-        : renderTextRuns(token.text);
-
-    case "table":
-      return [...renderTextRuns(formatTableText(token as Tokens.Table)), NEWLINE];
-
-    case "escape":
-      return renderTextRuns(token.text);
-
-    case "def":
-    case "del":
-    case "html":
-      return [];
-
+function toneClass(tone: SemanticTone | undefined) {
+  switch (tone) {
+    case "subtle":
+      return "text-cc-secondary";
+    case "permission":
+      return "text-cc-permission";
+    case "suggestion":
+      return "text-cc-suggestion";
+    case "success":
+      return "text-cc-success";
+    case "error":
+      return "text-cc-error";
+    case "warning":
+      return "text-cc-warning";
     default:
-      return [];
+      return "text-cc-text";
   }
 }
 
-function formatTokens(tokens: Token[]) {
-  const pieces: Piece[] = [];
-
-  tokens.forEach((token) => {
-    appendPieces(pieces, formatToken(token));
-  });
-
-  while (pieces[pieces.length - 1]?.type === "newline") {
-    pieces.pop();
-  }
-
-  return pieces;
+function pieceClassName(style: SegmentStyle, dimColor: boolean) {
+  return [
+    toneClass(style.tone),
+    style.bold ? "font-semibold" : "",
+    style.italic ? "italic" : "",
+    style.underline ? "underline underline-offset-2" : "",
+    style.dim || dimColor ? "opacity-[0.85]" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
-function pieceClassName(piece: Segment, dimColor: boolean) {
-  const classes = [];
-  const tone = piece.href ? "suggestion" : piece.style.tone ?? "text";
+function renderPieceBlock(pieces: Piece[], dimColor: boolean) {
+  let key = 0;
 
-  if (tone === "suggestion") {
-    classes.push("text-cc-suggestion");
-  } else if (tone === "permission") {
-    classes.push("text-cc-permission");
-  } else if (tone === "subtle") {
-    classes.push("text-cc-secondary");
-  } else {
-    classes.push("text-cc-text");
-  }
+  return (
+    <div className="m-0 min-w-0 whitespace-pre-wrap break-words">
+      {pieces.map((piece) => {
+        if (piece.type === "newline") {
+          key += 1;
+          return <br key={`br-${key}`} />;
+        }
 
-  if (piece.style.bold) {
-    classes.push("font-bold");
-  }
-  if (piece.style.italic) {
-    classes.push("italic");
-  }
-  if (piece.style.underline) {
-    classes.push("underline decoration-current underline-offset-2");
-  }
-  if (piece.style.dim || dimColor) {
-    classes.push("opacity-75");
-  }
-  if (piece.href) {
-    classes.push("hover:underline");
-  }
+        key += 1;
+        const className = pieceClassName(piece.style, dimColor);
 
-  return classes.join(" ");
-}
+        if (piece.href) {
+          return (
+            <a
+              key={`seg-${key}`}
+              href={piece.href}
+              target="_blank"
+              rel="noreferrer"
+              className={className}
+            >
+              {piece.text}
+            </a>
+          );
+        }
 
-function renderPieces(pieces: Piece[], dimColor = false) {
-  return pieces.map((piece, index) => {
-    if (piece.type === "newline") {
-      return <br key={`newline-${index}`} />;
-    }
-
-    if (piece.href) {
-      return (
-        <a
-          key={`piece-${index}`}
-          href={piece.href}
-          rel="noreferrer"
-          target="_blank"
-          className={pieceClassName(piece, dimColor)}
-        >
-          {piece.text}
-        </a>
-      );
-    }
-
-    return (
-      <span key={`piece-${index}`} className={pieceClassName(piece, dimColor)}>
-        {piece.text}
-      </span>
-    );
-  });
-}
-
-function flushNonTablePieces(
-  elements: ReactNode[],
-  pieces: Piece[],
-  dimColor: boolean,
-) {
-  if (pieces.length === 0) {
-    return [];
-  }
-
-  elements.push(
-    <div key={`markdown-block-${elements.length}`}>
-      {renderPieces(pieces, dimColor)}
-    </div>,
+        return (
+          <span key={`seg-${key}`} className={className}>
+            {piece.text}
+          </span>
+        );
+      })}
+    </div>
   );
-
-  return [];
 }
 
-function MarkdownTable({ token }: { token: Tokens.Table }) {
-  const text = useMemo(() => formatTableText(token), [token]);
-  return <pre className="m-0 whitespace-pre-wrap break-words">{text}</pre>;
+function MarkdownCodeBlock({ html }: { html: string }) {
+  return (
+    <pre className="cc-code-block m-0 min-w-0 whitespace-pre-wrap break-words">
+      <code
+        className="hljs bg-transparent"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </pre>
+  );
+}
+
+function MarkdownTableBlock({ token }: { token: Tokens.Table }) {
+  return (
+    <pre className="m-0 min-w-0 whitespace-pre-wrap break-words">
+      {formatTableText(token)}
+    </pre>
+  );
 }
 
 function MarkdownBody({
@@ -694,32 +799,23 @@ function MarkdownBody({
   content: string;
   dimColor?: boolean;
 }) {
-  const elements = useMemo(() => {
-    configureMarked();
-    const tokens = cachedLexer(stripSystemMessages(content));
-    const nextElements: ReactNode[] = [];
-    let nonTablePieces: Piece[] = [];
+  const blocks = useMemo(() => buildBlocks(content), [content]);
 
-    tokens.forEach((token, index) => {
-      if (token.type === "table") {
-        nonTablePieces = flushNonTablePieces(nextElements, nonTablePieces, dimColor);
-        nextElements.push(
-          <MarkdownTable
-            key={`markdown-table-${index}`}
-            token={token as Tokens.Table}
-          />,
-        );
-        return;
-      }
+  return (
+    <div className="flex min-w-0 flex-col gap-[1.2em]">
+      {blocks.map((block, index) => {
+        if (block.type === "segments") {
+          return <Fragment key={`segments-${index}`}>{renderPieceBlock(block.pieces, dimColor)}</Fragment>;
+        }
 
-      appendPieces(nonTablePieces, formatToken(token));
-    });
+        if (block.type === "code") {
+          return <MarkdownCodeBlock key={`code-${index}`} html={block.html} />;
+        }
 
-    flushNonTablePieces(nextElements, nonTablePieces, dimColor);
-    return nextElements;
-  }, [content, dimColor]);
-
-  return <>{elements}</>;
+        return <MarkdownTableBlock key={`table-${index}`} token={block.token} />;
+      })}
+    </div>
+  );
 }
 
 function StreamingMarkdown({
@@ -731,26 +827,35 @@ function StreamingMarkdown({
 }) {
   configureMarked();
 
-  const stripped = stripSystemMessages(content);
-  const tokens = marked.lexer(stripped);
+  const stripped = stripPromptXMLTags(content);
+  const effectiveStablePrefix = useMemo(() => {
+    let stablePrefix = getCachedStreamingPrefix(stripped);
+    const boundary = stablePrefix.length;
+    const tokens = marked.lexer(stripped.substring(boundary));
 
-  let lastContentIndex = tokens.length - 1;
-  while (lastContentIndex >= 0 && tokens[lastContentIndex]!.type === "space") {
-    lastContentIndex -= 1;
-  }
+    let lastContentIdx = tokens.length - 1;
+    while (lastContentIdx >= 0 && tokens[lastContentIdx]!.type === "space") {
+      lastContentIdx -= 1;
+    }
 
-  let advance = 0;
-  for (let index = 0; index < lastContentIndex; index += 1) {
-    advance += tokens[index]!.raw.length;
-  }
+    let advance = 0;
+    for (let index = 0; index < lastContentIdx; index += 1) {
+      advance += tokens[index]!.raw.length;
+    }
 
-  const stablePrefix = stripped.substring(0, advance);
-  const unstableSuffix = stripped.substring(stablePrefix.length);
+    if (advance > 0) {
+      stablePrefix = stripped.substring(0, boundary + advance);
+    }
+
+    cacheStreamingPrefix(stripped, stablePrefix);
+    return stablePrefix;
+  }, [stripped]);
+  const unstableSuffix = stripped.substring(effectiveStablePrefix.length);
 
   return (
-    <div className="flex flex-col gap-[1.2em]">
-      {stablePrefix ? (
-        <MarkdownBody content={stablePrefix} dimColor={dimColor} />
+    <div className="flex min-w-0 flex-col gap-[1.2em]">
+      {effectiveStablePrefix ? (
+        <MarkdownBody content={effectiveStablePrefix} dimColor={dimColor} />
       ) : null}
       {unstableSuffix ? (
         <MarkdownBody content={unstableSuffix} dimColor={dimColor} />
@@ -764,13 +869,9 @@ export function Markdown({
   streaming = false,
   dimColor = false,
 }: MarkdownProps) {
-  return (
-    <div className="m-0 min-w-0 max-w-full whitespace-pre-wrap break-words text-cc-text">
-      {streaming ? (
-        <StreamingMarkdown content={content} dimColor={dimColor} />
-      ) : (
-        <MarkdownBody content={content} dimColor={dimColor} />
-      )}
-    </div>
+  return streaming ? (
+    <StreamingMarkdown content={content} dimColor={dimColor} />
+  ) : (
+    <MarkdownBody content={content} dimColor={dimColor} />
   );
 }

@@ -6,47 +6,47 @@ import {
   CLAUDE_HEADER_TITLE,
 } from "@/lib/constants";
 
-const HEADER_LINES = [
-  {
-    mark: " ▐▛███▜▌",
-    spacing: "   ",
-    text: CLAUDE_HEADER_TITLE,
-    muted: false,
-  },
-  {
-    mark: "▝▜█████▛▘",
-    spacing: "  ",
-    text: CLAUDE_HEADER_SUBTITLE,
-    muted: true,
-  },
-  {
-    mark: "  ▘▘ ▝▝",
-    spacing: "    ",
-    text: CLAUDE_CWD,
-    muted: true,
-  },
-] as const;
+function Clawd() {
+  return (
+    <div className="flex flex-col leading-none text-cc-claude">
+      <div className="whitespace-pre">
+        <span> ▐</span>
+        <span className="bg-black">▛███▜</span>
+        <span>▌</span>
+      </div>
+      <div className="whitespace-pre">
+        <span>▝▜</span>
+        <span className="bg-black">█████</span>
+        <span>▛▘</span>
+      </div>
+      <div className="whitespace-pre">{"  "}▘▘ ▝▝{"  "}</div>
+    </div>
+  );
+}
 
 export function Welcome() {
   return (
-    <div className="select-none px-1 pt-1 pb-2">
-      <pre className="m-0 whitespace-pre">
-        <span className="text-[#74c169]">➜</span>
-        <span className="text-cc-text"> claude</span>
-      </pre>
-
-      <pre className="mt-1 m-0 whitespace-pre text-cc-text">
-        {HEADER_LINES.map((line, index) => (
-          <span key={line.text}>
-            <span className="text-cc-claude">{line.mark}</span>
-            <span className={line.muted ? "text-cc-secondary" : "font-semibold text-cc-text"}>
-              {line.spacing}
-              {line.text}
+    <div className="select-none px-2 pt-1 pb-2">
+      <div className="flex items-center gap-2">
+        <Clawd />
+        <div className="flex min-w-0 flex-col">
+          <div className="min-w-0 whitespace-pre">
+            <span className="font-semibold text-cc-text">
+              {CLAUDE_HEADER_TITLE.replace(/ v.+$/, "")}
             </span>
-            {index < HEADER_LINES.length - 1 ? "\n" : null}
-          </span>
-        ))}
-      </pre>
+            <span className="text-cc-secondary">
+              {" "}
+              {CLAUDE_HEADER_TITLE.replace(/^Claude Code /, "")}
+            </span>
+          </div>
+          <div className="min-w-0 whitespace-pre text-cc-secondary">
+            {CLAUDE_HEADER_SUBTITLE}
+          </div>
+          <div className="min-w-0 whitespace-pre text-cc-secondary">
+            {CLAUDE_CWD}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
