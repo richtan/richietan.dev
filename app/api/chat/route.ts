@@ -125,7 +125,7 @@ export async function POST(req: Request) {
       },
     },
     stopWhen: stepCountIs(4),
-    maxOutputTokens: extendedThinking ? 2048 : 1024,
+    maxOutputTokens: extendedThinking ? 4096 : 2048,
   });
 
   return result.toUIMessageStreamResponse();
