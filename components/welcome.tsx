@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  CLAUDE_CWD,
+  CLAUDE_DISPLAY_CWD,
   CLAUDE_HEADER_SUBTITLE,
   CLAUDE_HEADER_TITLE,
 } from "@/lib/constants";
@@ -43,7 +43,7 @@ export function Welcome() {
             {CLAUDE_HEADER_SUBTITLE}
           </div>
           <div className="min-w-0 whitespace-pre text-cc-secondary">
-            {CLAUDE_CWD}
+            {CLAUDE_DISPLAY_CWD}
           </div>
         </div>
       </div>
