@@ -32,6 +32,97 @@ function padRight(value: string, width: number) {
   return value + " ".repeat(Math.max(0, width - value.length));
 }
 
+const SLASH_COMMAND_NAME_SET: ReadonlySet<string> = new Set(
+  SLASH_COMMANDS.map((command) => command.name),
+);
+const SLASH_COMMAND_PATTERN = /(^|[\s])(\/[a-zA-Z][a-zA-Z0-9:\-_]*)/g;
+
+interface PromptHighlightRange {
+  start: number;
+  end: number;
+  className: string;
+}
+
+function getPromptHighlightRanges(input: string): PromptHighlightRange[] {
+  const ranges: PromptHighlightRange[] = [];
+  let match: RegExpExecArray | null = null;
+  SLASH_COMMAND_PATTERN.lastIndex = 0;
+
+  while ((match = SLASH_COMMAND_PATTERN.exec(input)) !== null) {
+    const precedingWhitespace = match[1] ?? "";
+    const commandToken = match[2] ?? "";
+    const start = match.index + precedingWhitespace.length;
+    const end = start + commandToken.length;
+    const commandName = commandToken.slice(1);
+
+    if (SLASH_COMMAND_NAME_SET.has(commandName)) {
+      ranges.push({
+        start,
+        end,
+        className: "text-cc-suggestion",
+      });
+    }
+  }
+
+  return ranges;
+}
+
+function renderPromptSegments(
+  text: string,
+  startOffset: number,
+  highlights: ReadonlyArray<PromptHighlightRange>,
+) {
+  if (!text) {
+    return null;
+  }
+
+  const endOffset = startOffset + text.length;
+  const overlappingHighlights = highlights.filter(
+    (highlight) => highlight.end > startOffset && highlight.start < endOffset,
+  );
+
+  if (overlappingHighlights.length === 0) {
+    return text;
+  }
+
+  const segments: React.ReactNode[] = [];
+  let localOffset = 0;
+
+  for (const highlight of overlappingHighlights) {
+    const localStart = Math.max(0, highlight.start - startOffset);
+    const localEnd = Math.min(text.length, highlight.end - startOffset);
+
+    if (localStart > localOffset) {
+      segments.push(
+        <span key={`plain-${startOffset + localOffset}`}>
+          {text.slice(localOffset, localStart)}
+        </span>,
+      );
+    }
+
+    segments.push(
+      <span
+        key={`highlight-${highlight.start}-${highlight.end}`}
+        className={highlight.className}
+      >
+        {text.slice(localStart, localEnd)}
+      </span>,
+    );
+
+    localOffset = localEnd;
+  }
+
+  if (localOffset < text.length) {
+    segments.push(
+      <span key={`plain-${startOffset + localOffset}`}>
+        {text.slice(localOffset)}
+      </span>,
+    );
+  }
+
+  return segments;
+}
+
 function PromptBorderRow() {
   return (
     <div className="flex h-[1.2em] items-center">
@@ -87,6 +178,7 @@ export function InputArea({
   const beforeCursor = input.slice(0, cursorPosition);
   const cursorCharacter = input[cursorPosition] ?? " ";
   const afterCursor = input.slice(Math.min(input.length, cursorPosition + 1));
+  const promptHighlights = useMemo(() => getPromptHighlightRanges(input), [input]);
 
   return (
     <div className="shrink-0">
@@ -109,18 +201,28 @@ export function InputArea({
       >
         <PromptBorderRow />
         <div className="flex min-h-[1.2em] items-start px-2">
-          <span className="w-[3ch] shrink-0 select-none whitespace-pre text-cc-text">
+          <span className="w-[2ch] shrink-0 select-none whitespace-pre text-cc-text">
             ❯{" "}
           </span>
           <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-cc-text">
-            {beforeCursor}
-            {!disabled ? (
-              <span className="select-none bg-cc-text text-cc-bg">
-                {cursorCharacter === " " ? "\u00A0" : cursorCharacter}
-              </span>
-            ) : null}
-            {afterCursor}
-            {disabled && input.length === 0 ? " " : null}
+            {disabled ? (
+              <>
+                {renderPromptSegments(input, 0, promptHighlights)}
+                {input.length === 0 ? " " : null}
+              </>
+            ) : (
+              <>
+                {renderPromptSegments(beforeCursor, 0, promptHighlights)}
+                <span className="select-none bg-cc-text text-cc-bg">
+                  {cursorCharacter === " " ? "\u00A0" : cursorCharacter}
+                </span>
+                {renderPromptSegments(
+                  afterCursor,
+                  Math.min(input.length, cursorPosition + 1),
+                  promptHighlights,
+                )}
+              </>
+            )}
           </div>
           <textarea
             ref={textareaRef}

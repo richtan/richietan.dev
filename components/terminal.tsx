@@ -2,6 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import {
+  useCallback,
   startTransition,
   useEffect,
   useMemo,
@@ -12,11 +13,12 @@ import { hackNerdMono } from "@/app/fonts";
 import { Welcome } from "./welcome";
 import { Message } from "./message";
 import { InputArea } from "./input-area";
+import { HelpPanel } from "./help-panel";
 import { CLAUDE_CWD, getSlashCommand, SLASH_COMMANDS } from "@/lib/constants";
 import { DOUBLE_ESCAPE_TIMEOUT_MS } from "@/lib/terminal-shortcuts";
 import {
   AppMessage,
-  createAssistantPanelMessage,
+  createAssistantNoteMessage,
   createAssistantTextMessage,
   createUserTextMessage,
   normalizeMessages,
@@ -286,6 +288,7 @@ export function Terminal() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [pendingEscapeClear, setPendingEscapeClear] = useState(false);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const [helpOpen, setHelpOpen] = useState(false);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [spinnerElapsed, setSpinnerElapsed] = useState(0);
   const [spinnerMessageIndex, setSpinnerMessageIndex] = useState(0);
@@ -456,11 +459,47 @@ export function Terminal() {
     setHistoryDraft("");
   }
 
-  function appendLocalMessages(nextMessages: AppMessage[]) {
+  const appendLocalMessages = useCallback((nextMessages: AppMessage[]) => {
     startTransition(() => {
       setMessages((current) => [...current, ...nextMessages]);
     });
-  }
+  }, [setMessages]);
+
+  const closeHelpPanel = useCallback(() => {
+    setHelpOpen(false);
+    setFollowOutput(true);
+    appendLocalMessages([createAssistantNoteMessage("Help dialog dismissed")]);
+    requestAnimationFrame(() => {
+      focusPrompt();
+    });
+  }, [appendLocalMessages]);
+
+  useEffect(() => {
+    if (!helpOpen) {
+      return;
+    }
+
+    const handleHelpKeyDown = (event: KeyboardEvent) => {
+      if (status === "submitted" || status === "streaming") {
+        return;
+      }
+
+      if (
+        event.key === "Escape" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
+        event.preventDefault();
+        closeHelpPanel();
+      }
+    };
+
+    window.addEventListener("keydown", handleHelpKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleHelpKeyDown);
+    };
+  }, [closeHelpPanel, helpOpen, status]);
 
   async function submitText(value: string) {
     const trimmed = value.trim();
@@ -476,6 +515,7 @@ export function Terminal() {
     scrollToBottom();
     setInput("");
     setShowShortcuts(false);
+    setHelpOpen(false);
     setSelectedSuggestion(0);
     setPendingEscapeClear(false);
     setHistorySearchOpen(false);
@@ -509,8 +549,8 @@ export function Terminal() {
         if (command.name === "help") {
           appendLocalMessages([
             createUserTextMessage(trimmed),
-            createAssistantPanelMessage("help"),
           ]);
+          setHelpOpen(true);
           return;
         }
       }
@@ -549,6 +589,7 @@ export function Terminal() {
     clearError();
     setFollowOutput(true);
     setInput("");
+    setHelpOpen(false);
     setHistory([]);
     setHistoryIndex(null);
     setHistoryDraft("");
@@ -627,6 +668,34 @@ export function Terminal() {
   }
 
   async function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    const lowerKey = event.key.toLowerCase();
+
+    if (event.ctrlKey && lowerKey === "c") {
+      if (status === "submitted" || status === "streaming") {
+        event.preventDefault();
+        await stop();
+      }
+      return;
+    }
+
+    if (event.key === "Escape" && (status === "submitted" || status === "streaming")) {
+      event.preventDefault();
+      await stop();
+      return;
+    }
+
+    if (
+      helpOpen &&
+      event.key === "Escape" &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+      closeHelpPanel();
+      return;
+    }
+
     const closeHistorySearch = () => {
       setHistorySearchOpen(false);
       setHistorySearchQuery("");
@@ -690,8 +759,6 @@ export function Terminal() {
       }
       return;
     }
-
-    const lowerKey = event.key.toLowerCase();
     const textarea = textareaRef.current;
     const { start, end } = getSelectionRange(textarea);
     const hasSelection = start !== end;
@@ -703,20 +770,6 @@ export function Terminal() {
 
     if (pendingEscapeClear && event.key !== "Escape" && !isModifierOnly) {
       setPendingEscapeClear(false);
-    }
-
-    if (event.ctrlKey && event.key.toLowerCase() === "c") {
-      if (status === "submitted" || status === "streaming") {
-        event.preventDefault();
-        await stop();
-      }
-      return;
-    }
-
-    if (event.key === "Escape" && (status === "submitted" || status === "streaming")) {
-      event.preventDefault();
-      await stop();
-      return;
     }
 
     if (
@@ -768,6 +821,7 @@ export function Terminal() {
       !event.ctrlKey &&
       !event.metaKey &&
       !event.altKey &&
+      !helpOpen &&
       input.length === 0 &&
       suggestions.length === 0
     ) {
@@ -1017,6 +1071,7 @@ export function Terminal() {
 
   const effectiveShowShortcuts =
     showShortcuts &&
+    !helpOpen &&
     input.length === 0 &&
     !historySearchOpen &&
     suggestions.length === 0 &&
@@ -1060,6 +1115,7 @@ export function Terminal() {
             case "assistant-text":
             case "assistant-thinking":
             case "assistant-error":
+            case "system-note":
             case "tip":
               return `${node.id}:${node.type}:${node.text.length}`;
             case "tool-summary":
@@ -1070,10 +1126,11 @@ export function Terminal() {
               return `${node.id}:${node.type}:${node.panel}`;
           }
         }),
+        `help:${helpOpen ? 1 : 0}`,
         `spinner:${showSpinner ? 1 : 0}`,
         errorNode ? `error:${errorNode.text.length}` : "error:0",
       ].join("|"),
-    [errorNode, showSpinner, transcript],
+    [errorNode, helpOpen, showSpinner, transcript],
   );
 
   useEffect(() => {
@@ -1133,6 +1190,12 @@ export function Terminal() {
         />
       ))}
 
+      {helpOpen ? (
+        <div className="mt-2 px-1">
+          <HelpPanel />
+        </div>
+      ) : null}
+
       {showSpinner ? (
         <div className="mt-2 flex items-baseline px-1">
           <span className="w-4 shrink-0 text-cc-claude select-none">
@@ -1151,9 +1214,11 @@ export function Terminal() {
 
       {errorNode ? <Message node={errorNode} /> : null}
 
-      <div className="pt-[1.2em]">
-        {promptInput}
-      </div>
+      {!helpOpen ? (
+        <div className="pt-[1.2em]">
+          {promptInput}
+        </div>
+      ) : null}
     </>
   );
 

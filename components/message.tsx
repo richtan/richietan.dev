@@ -126,6 +126,16 @@ export function Message({
         </div>
       );
 
+    case "system-note":
+      return (
+        <div className="mt-0 flex items-baseline px-2">
+          <span className="w-4 shrink-0 select-none text-cc-secondary">⎿</span>
+          <div className="min-w-0 flex-1 whitespace-pre-wrap text-cc-text">
+            {node.text}
+          </div>
+        </div>
+      );
+
     case "local-panel":
       return (
         <div className="mt-2">

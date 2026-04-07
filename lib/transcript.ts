@@ -3,6 +3,7 @@ import type { UIMessage } from "ai";
 export interface AppMessageMetadata {
   localPanel?: "help";
   localError?: boolean;
+  localNote?: boolean;
 }
 
 export type AppMessage = UIMessage<AppMessageMetadata>;
@@ -50,6 +51,11 @@ export type TranscriptNode =
   | {
       id: string;
       type: "assistant-error";
+      text: string;
+    }
+  | {
+      id: string;
+      type: "system-note";
       text: string;
     }
   | {
@@ -246,6 +252,10 @@ export function createAssistantTextMessage(
   };
 }
 
+export function createAssistantNoteMessage(text: string): AppMessage {
+  return createAssistantTextMessage(text, { localNote: true });
+}
+
 export function createAssistantPanelMessage(
   panel: "help",
 ): AppMessage {
@@ -301,6 +311,18 @@ export function normalizeMessages(
         nodes.push({
           id: `${message.id}-local-error`,
           type: "assistant-error",
+          text,
+        });
+      }
+      continue;
+    }
+
+    if (message.metadata?.localNote) {
+      const text = getMessageText(message);
+      if (text) {
+        nodes.push({
+          id: `${message.id}-local-note`,
+          type: "system-note",
           text,
         });
       }
