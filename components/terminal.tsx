@@ -1191,13 +1191,13 @@ export function Terminal() {
       ))}
 
       {helpOpen ? (
-        <div className="mt-2 px-1">
+        <div className="mt-[1.2em] px-1">
           <HelpPanel />
         </div>
       ) : null}
 
       {showSpinner ? (
-        <div className="mt-2 flex items-baseline px-1">
+        <div className="mt-[1.2em] flex items-baseline px-1">
           <span className="w-4 shrink-0 text-cc-claude select-none">
             {SPINNER_SEQUENCE[spinnerFrame]}
           </span>
