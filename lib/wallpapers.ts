@@ -4,6 +4,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { get, put } from "@vercel/blob";
 import { openai } from "@ai-sdk/openai";
 import { generateImage } from "ai";
+import sharp from "sharp";
 import { z } from "zod";
 
 const MANIFEST_PATH = "wallpapers/manifest.json";
@@ -12,13 +13,17 @@ const WALLPAPER_SIZE = "1536x1024";
 const WALLPAPER_WIDTH = 1536;
 const WALLPAPER_HEIGHT = 1024;
 const IMAGE_CACHE_SECONDS = 60 * 60 * 24 * 30;
-const MANIFEST_CACHE_SECONDS = 60;
+const MANIFEST_CACHE_SECONDS = 0;
+const MANIFEST_VERSION = 3;
+const PREVIEW_WIDTH = 128;
+const PREVIEW_QUALITY = 72;
+const MANIFEST_WRITE_RETRIES = 2;
 
 export const WALLPAPER_POOL_TARGET = 12;
 export const WALLPAPER_POOL_THRESHOLD = 6;
 export const WALLPAPER_BATCH_SIZE = 4;
 
-const wallpaperSchema = z.object({
+const wallpaperCoreSchema = z.object({
   id: z.string(),
   url: z.string().url(),
   pathname: z.string(),
@@ -29,11 +34,39 @@ const wallpaperSchema = z.object({
   contentType: z.string(),
 });
 
-const wallpaperManifestSchema = z.object({
+const wallpaperV2Schema = wallpaperCoreSchema.extend({
+  blurDataUrl: z.string().optional(),
+  averageColor: z.string().optional(),
+});
+
+const wallpaperSchema = wallpaperCoreSchema.extend({
+  previewDataUrl: z.string().optional(),
+  averageColor: z.string().optional(),
+});
+
+const legacyWallpaperManifestSchema = z.object({
   version: z.literal(1),
+  updatedAt: z.string(),
+  wallpapers: z.array(wallpaperCoreSchema),
+});
+
+const wallpaperManifestV2Schema = z.object({
+  version: z.literal(2),
+  updatedAt: z.string(),
+  wallpapers: z.array(wallpaperV2Schema),
+});
+
+const wallpaperManifestSchema = z.object({
+  version: z.literal(MANIFEST_VERSION),
   updatedAt: z.string(),
   wallpapers: z.array(wallpaperSchema),
 });
+
+const anyWallpaperManifestSchema = z.union([
+  legacyWallpaperManifestSchema,
+  wallpaperManifestV2Schema,
+  wallpaperManifestSchema,
+]);
 
 export type Wallpaper = z.infer<typeof wallpaperSchema>;
 type WallpaperManifest = z.infer<typeof wallpaperManifestSchema>;
@@ -63,9 +96,41 @@ const structurePrompts = [
 
 function emptyManifest(): WallpaperManifest {
   return {
-    version: 1,
+    version: MANIFEST_VERSION,
     updatedAt: new Date(0).toISOString(),
     wallpapers: [],
+  };
+}
+
+function normalizeManifest(
+  manifest: z.infer<typeof anyWallpaperManifestSchema>,
+): WallpaperManifest {
+  if (manifest.version === MANIFEST_VERSION) {
+    return manifest;
+  }
+
+  if (manifest.version === 2) {
+    return {
+      version: MANIFEST_VERSION,
+      updatedAt: manifest.updatedAt,
+      wallpapers: manifest.wallpapers.map((wallpaper) => ({
+        id: wallpaper.id,
+        url: wallpaper.url,
+        pathname: wallpaper.pathname,
+        prompt: wallpaper.prompt,
+        createdAt: wallpaper.createdAt,
+        width: wallpaper.width,
+        height: wallpaper.height,
+        contentType: wallpaper.contentType,
+        averageColor: wallpaper.averageColor,
+      })),
+    };
+  }
+
+  return {
+    version: MANIFEST_VERSION,
+    updatedAt: manifest.updatedAt,
+    wallpapers: manifest.wallpapers,
   };
 }
 
@@ -120,21 +185,18 @@ async function readManifest() {
   if (!blob) {
     return {
       manifest: emptyManifest(),
-      etag: undefined as string | undefined,
+      needsRewrite: false,
     };
   }
 
-  const parsed = wallpaperManifestSchema.parse(JSON.parse(blob.text));
+  const parsed = anyWallpaperManifestSchema.parse(JSON.parse(blob.text));
   return {
-    manifest: parsed,
-    etag: blob.etag,
+    manifest: normalizeManifest(parsed),
+    needsRewrite: parsed.version !== MANIFEST_VERSION,
   };
 }
 
-async function writeManifest(
-  manifest: WallpaperManifest,
-  etag?: string,
-) {
+async function writeManifest(manifest: WallpaperManifest) {
   const token = getBlobToken();
   if (!token) {
     throw new Error("BLOB_READ_WRITE_TOKEN is not configured.");
@@ -146,7 +208,6 @@ async function writeManifest(
     cacheControlMaxAge: MANIFEST_CACHE_SECONDS,
     contentType: "application/json; charset=utf-8",
     token,
-    ...(etag ? { ifMatch: etag } : {}),
   });
 }
 
@@ -156,6 +217,44 @@ function extensionFromMediaType(mediaType: string) {
   }
 
   return mediaType.split("/")[1] ?? "png";
+}
+
+async function buildWallpaperPreview(buffer: Buffer) {
+  const previewBuffer = await sharp(buffer)
+    .resize({ width: PREVIEW_WIDTH })
+    .webp({ quality: PREVIEW_QUALITY })
+    .toBuffer();
+
+  const averagePixel = await sharp(buffer)
+    .resize(1, 1, { fit: "fill" })
+    .removeAlpha()
+    .raw()
+    .toBuffer();
+
+  return {
+    previewDataUrl: `data:image/webp;base64,${previewBuffer.toString("base64")}`,
+    averageColor: rgbToHex(
+      averagePixel[0] ?? 26,
+      averagePixel[1] ?? 26,
+      averagePixel[2] ?? 46,
+    ),
+  };
+}
+
+async function withWallpaperPreview(
+  wallpaper: Omit<Wallpaper, "previewDataUrl" | "averageColor">,
+  buffer: Buffer,
+): Promise<Wallpaper> {
+  try {
+    const preview = await buildWallpaperPreview(buffer);
+    return {
+      ...wallpaper,
+      ...preview,
+    };
+  } catch (error) {
+    console.error("Failed to derive wallpaper preview:", error);
+    return wallpaper;
+  }
 }
 
 async function generateWallpaperEntry(): Promise<Wallpaper> {
@@ -186,8 +285,9 @@ async function generateWallpaperEntry(): Promise<Wallpaper> {
   const extension = extensionFromMediaType(image.mediaType);
   const id = randomUUID();
   const pathname = `${IMAGE_PREFIX}/${createdAt.slice(0, 10)}/${id}.${extension}`;
+  const imageBuffer = Buffer.from(image.uint8Array);
 
-  const blob = await put(pathname, Buffer.from(image.uint8Array), {
+  const blob = await put(pathname, imageBuffer, {
     access: "public",
     addRandomSuffix: false,
     cacheControlMaxAge: IMAGE_CACHE_SECONDS,
@@ -195,16 +295,72 @@ async function generateWallpaperEntry(): Promise<Wallpaper> {
     token,
   });
 
-  return {
-    id,
-    url: blob.url,
-    pathname: blob.pathname,
-    prompt,
-    createdAt,
-    width: WALLPAPER_WIDTH,
-    height: WALLPAPER_HEIGHT,
-    contentType: image.mediaType,
-  };
+  return withWallpaperPreview(
+    {
+      id,
+      url: blob.url,
+      pathname: blob.pathname,
+      prompt,
+      createdAt,
+      width: WALLPAPER_WIDTH,
+      height: WALLPAPER_HEIGHT,
+      contentType: image.mediaType,
+    },
+    imageBuffer,
+  );
+}
+
+async function backfillWallpaperPreview(wallpaper: Wallpaper) {
+  if (wallpaper.previewDataUrl && wallpaper.averageColor) {
+    return {
+      wallpaper,
+      updated: false,
+    };
+  }
+
+  const token = getBlobToken();
+  if (!token) {
+    return {
+      wallpaper,
+      updated: false,
+    };
+  }
+
+  try {
+    const result = await get(wallpaper.pathname, {
+      access: "public",
+      token,
+    });
+
+    if (!result || result.statusCode !== 200 || !result.stream) {
+      return {
+        wallpaper,
+        updated: false,
+      };
+    }
+
+    const buffer = Buffer.from(await new Response(result.stream).arrayBuffer());
+    return {
+      wallpaper: await withWallpaperPreview(wallpaper, buffer),
+      updated: true,
+    };
+  } catch (error) {
+    console.error("Failed to backfill wallpaper preview:", error);
+    return {
+      wallpaper,
+      updated: false,
+    };
+  }
+}
+
+function rgbToHex(r: number, g: number, b: number) {
+  return `#${[r, g, b]
+    .map((value) =>
+      Math.max(0, Math.min(255, Math.round(value)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
 }
 
 export async function getWallpaperManifest() {
@@ -230,15 +386,43 @@ export function needsTopUp(manifest: WallpaperManifest) {
   return manifest.wallpapers.length < WALLPAPER_POOL_THRESHOLD;
 }
 
-export async function topUpWallpaperPool() {
-  const { manifest, etag } = await readManifest();
+async function topUpWallpaperPoolOnce() {
+  const { manifest, needsRewrite } = await readManifest();
   const beforeCount = manifest.wallpapers.length;
 
-  if (!needsTopUp(manifest)) {
+  let nextWallpapers = manifest.wallpapers;
+  let backfilled = 0;
+
+  if (
+    nextWallpapers.some(
+      (wallpaper) => !wallpaper.previewDataUrl || !wallpaper.averageColor,
+    )
+  ) {
+    const enriched: Wallpaper[] = [];
+    for (const wallpaper of nextWallpapers) {
+      const result = await backfillWallpaperPreview(wallpaper);
+      enriched.push(result.wallpaper);
+      if (result.updated) {
+        backfilled += 1;
+      }
+    }
+    nextWallpapers = enriched;
+  }
+
+  if (!needsTopUp({ ...manifest, wallpapers: nextWallpapers })) {
+    if (backfilled > 0 || needsRewrite) {
+      await writeManifest({
+        version: MANIFEST_VERSION,
+        updatedAt: new Date().toISOString(),
+        wallpapers: nextWallpapers,
+      });
+    }
+
     return {
       generated: 0,
-      skipped: true,
-      total: beforeCount,
+      backfilled,
+      skipped: backfilled === 0,
+      total: nextWallpapers.length,
       target: WALLPAPER_POOL_TARGET,
       threshold: WALLPAPER_POOL_THRESHOLD,
     };
@@ -250,27 +434,55 @@ export async function topUpWallpaperPool() {
   );
 
   const generated: Wallpaper[] = [];
-  for (let index = 0; index < count; index++) {
+  for (let index = 0; index < count; index += 1) {
     generated.push(await generateWallpaperEntry());
   }
 
   const nextManifest: WallpaperManifest = {
-    version: 1,
+    version: MANIFEST_VERSION,
     updatedAt: new Date().toISOString(),
-    wallpapers: [...generated, ...manifest.wallpapers].sort((a, b) =>
+    wallpapers: [...generated, ...nextWallpapers].sort((a, b) =>
       b.createdAt.localeCompare(a.createdAt),
     ),
   };
 
-  await writeManifest(nextManifest, etag);
+  await writeManifest(nextManifest);
 
   return {
     generated: generated.length,
+    backfilled,
     skipped: false,
     total: nextManifest.wallpapers.length,
     target: WALLPAPER_POOL_TARGET,
     threshold: WALLPAPER_POOL_THRESHOLD,
   };
+}
+
+export async function topUpWallpaperPool() {
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await topUpWallpaperPoolOnce();
+    } catch (error) {
+      if (!isManifestWriteConflict(error) || attempt >= MANIFEST_WRITE_RETRIES) {
+        throw error;
+      }
+
+      attempt += 1;
+    }
+  }
+}
+
+function isManifestWriteConflict(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.message.includes("ETag mismatch") ||
+    error.message.includes("Precondition failed")
+  );
 }
 
 export function isCronRequestAuthorized(request: Request) {
