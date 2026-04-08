@@ -19,7 +19,6 @@ export function getOpeningWindowSnapshotDataUrl(rect: Pick<Rect, "width" | "heig
 
   const titleBarHeight = round(32 * sy);
   const terminalPaddingX = round(8 * sx);
-  const prefixBaseline = round(titleBarHeight + 15 * sy);
   const welcomeTop = round(titleBarHeight + 24 * sy);
   const glyphX = round(10 * sx);
   const glyphY = round(welcomeTop + 20 * sy);

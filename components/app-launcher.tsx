@@ -246,7 +246,13 @@ export function AppLauncher({
             "0 12px 28px rgba(2, 6, 14, 0.18), inset 0 1px 0 rgba(255,255,255,0.15)",
           backdropFilter: "blur(18px) saturate(1.12)",
           WebkitBackdropFilter: "blur(18px) saturate(1.12)",
+          opacity: isVisible && !isClosing ? 0 : 1,
           transition: `transform 140ms ${OPEN_EASE}, background 140ms ${OPEN_EASE}, box-shadow 140ms ${OPEN_EASE}`,
+          animation: isClosing
+            ? `spotlightCloseScale ${SPOTLIGHT_ANIMATION_MS}ms ${OPEN_EASE} reverse forwards, spotlightFadeIn ${SPOTLIGHT_ANIMATION_MS}ms ease-out forwards`
+            : isVisible
+              ? `spotlightOpenScale ${SPOTLIGHT_ANIMATION_MS}ms ${SPOTLIGHT_OPEN_SCALE_TIMING} reverse forwards, spotlightFadeOut ${SPOTLIGHT_ANIMATION_MS}ms ease-out forwards`
+              : undefined,
         }}
       >
         <TriggerSearchGlyph />
