@@ -2,17 +2,20 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
 } from "react";
+import type { Rect } from "@/lib/use-window-state";
 
 type ClaudeLauncherStatus = "open" | "minimized" | "closed";
 
 interface AppLauncherProps {
   claudeStatus: ClaudeLauncherStatus;
   onClaudeLaunch: () => void;
+  onTriggerRectChange?: (rect: Rect | null) => void;
 }
 
 interface LauncherApp {
@@ -52,11 +55,13 @@ const SPOTLIGHT_OPEN_SCALE_TIMING =
 export function AppLauncher({
   claudeStatus,
   onClaudeLaunch,
+  onTriggerRectChange,
 }: AppLauncherProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const normalizedQuery = query.trim().toLowerCase();
@@ -98,6 +103,39 @@ export function AppLauncher({
       }
     };
   }, []);
+
+  useLayoutEffect(() => {
+    if (!onTriggerRectChange || !triggerRef.current) {
+      return;
+    }
+
+    const updateRect = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) {
+        onTriggerRectChange(null);
+        return;
+      }
+
+      onTriggerRectChange({
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+      });
+    };
+
+    updateRect();
+
+    const observer = new ResizeObserver(updateRect);
+    observer.observe(triggerRef.current);
+    window.addEventListener("resize", updateRect);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateRect);
+      onTriggerRectChange(null);
+    };
+  }, [onTriggerRectChange]);
 
   function closeLauncher() {
     if (!isVisible || isClosing) {
@@ -185,6 +223,7 @@ export function AppLauncher({
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         aria-label={open ? "Close application launcher" : "Open application launcher"}
         aria-expanded={open}

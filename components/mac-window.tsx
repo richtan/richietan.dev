@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useRef, type CSSProperties, type ReactNode } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 
 interface MacWindowProps {
   children: ReactNode;
@@ -8,10 +14,14 @@ interface MacWindowProps {
   y: number;
   width: number;
   height: number;
+  showOpenIntro?: boolean;
+  disableInteraction?: boolean;
+  visualOpacity?: number;
+  visualOpacityTransition?: string;
+  hideVisual?: boolean;
   isAnimating: boolean;
   isMinimized: boolean;
   isClosed: boolean;
-  showOpenAnim: boolean;
   onDragStart: () => void;
   onDragMove: (newX: number, newY: number, cursorX: number, cursorY: number) => void;
   onDragEnd: () => void;
@@ -30,16 +40,20 @@ const HANDLE = 6;
 
 type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
-export function MacWindow({
+export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function MacWindow({
   children,
   x,
   y,
   width,
   height,
+  showOpenIntro = false,
+  disableInteraction = false,
+  visualOpacity = 1,
+  visualOpacityTransition,
+  hideVisual = false,
   isAnimating,
   isMinimized,
   isClosed,
-  showOpenAnim,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -48,7 +62,7 @@ export function MacWindow({
   onMinimize,
   onClose,
   onAnimationEnd,
-}: MacWindowProps) {
+}, ref) {
   const dragRef = useRef<{ startX: number; startY: number; winX: number; winY: number } | null>(null);
   const resizeRef = useRef<{
     dir: ResizeDir;
@@ -180,38 +194,48 @@ export function MacWindow({
     : "none";
 
   let extraStyle: CSSProperties = {};
+  let stateOpacity = 1;
 
   if (isMinimized) {
+    stateOpacity = 0;
     extraStyle = {
       transform: "translateY(56px) scale(0.9)",
-      opacity: 0,
       pointerEvents: "none",
       transformOrigin: "center top",
     };
   } else if (isClosed) {
+    stateOpacity = 0;
     extraStyle = {
       transform: "scale(0.94)",
-      opacity: 0,
       pointerEvents: "none",
-    };
-  } else if (showOpenAnim) {
-    extraStyle = {
-      animation: `windowOpen 0.4s ${EASE} forwards`,
-      opacity: 0,
     };
   }
 
+  const combinedTransition = [
+    transition !== "none" ? transition : null,
+    visualOpacityTransition ? `opacity ${visualOpacityTransition}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ") || "none";
+
   return (
     <div
+      ref={ref}
       className="absolute z-30"
       style={{
         left: x,
         top: y,
         width,
         height,
-        transition,
+        transition: combinedTransition,
+        animation: showOpenIntro
+          ? "windowOpen 220ms cubic-bezier(0.22, 1, 0.36, 1) both"
+          : undefined,
+        pointerEvents: disableInteraction ? "none" : undefined,
+        visibility: hideVisual ? "hidden" : "visible",
+        opacity: stateOpacity * visualOpacity,
         willChange:
-          isAnimating || showOpenAnim
+          isAnimating || showOpenIntro
             ? "left, top, width, height, transform, opacity"
             : "auto",
         ...extraStyle,
@@ -227,7 +251,7 @@ export function MacWindow({
         }
       }}
     >
-      {!isMinimized && !isClosed ? (
+      {!isMinimized && !isClosed && !disableInteraction ? (
         <ResizeHandles
           onPointerDown={handleResizePointerDown}
           onPointerMove={handleResizePointerMove}
@@ -279,7 +303,7 @@ export function MacWindow({
       </div>
     </div>
   );
-}
+});
 
 function ResizeHandles({
   onPointerDown,

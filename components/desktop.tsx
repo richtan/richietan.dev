@@ -2,13 +2,14 @@
 
 import type { ReactNode } from "react";
 import { AppLauncher } from "@/components/app-launcher";
-import { getSnapRect, type SnapZone } from "@/lib/use-window-state";
+import { getSnapRect, type Rect, type SnapZone } from "@/lib/use-window-state";
 
 interface DesktopProps {
   children: ReactNode;
   snapPreview: SnapZone;
   claudeStatus: "open" | "minimized" | "closed";
   onClaudeLaunch: () => void;
+  onLauncherTriggerRectChange: (rect: Rect | null) => void;
 }
 
 export function Desktop({
@@ -16,13 +17,18 @@ export function Desktop({
   snapPreview,
   claudeStatus,
   onClaudeLaunch,
+  onLauncherTriggerRectChange,
 }: DesktopProps) {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-transparent">
       {children}
 
       {snapPreview ? <SnapPreviewOverlay zone={snapPreview} /> : null}
-      <AppLauncher claudeStatus={claudeStatus} onClaudeLaunch={onClaudeLaunch} />
+      <AppLauncher
+        claudeStatus={claudeStatus}
+        onClaudeLaunch={onClaudeLaunch}
+        onTriggerRectChange={onLauncherTriggerRectChange}
+      />
     </div>
   );
 }

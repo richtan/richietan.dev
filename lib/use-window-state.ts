@@ -25,6 +25,12 @@ export interface Rect {
   height: number;
 }
 
+export type WindowTransitionPhase =
+  | "idle"
+  | "opening-genie"
+  | "minimizing-genie"
+  | "restoring-genie";
+
 interface Viewport {
   width: number;
   height: number;
@@ -43,6 +49,8 @@ interface WindowState {
   isAnimating: boolean;
   snapZone: SnapZone;
   usesDefaultRect: boolean;
+  transitionPhase: WindowTransitionPhase;
+  transitionKey: number;
 }
 
 const VP_PAD = 16;
@@ -260,25 +268,17 @@ export function useWindowState() {
     isAnimating: false,
     snapZone: null,
     usesDefaultRect: true,
+    transitionPhase: "opening-genie",
+    transitionKey: 1,
   });
   const [dragSnapZone, setDragSnapZone] = useState<SnapZone>(null);
-  const [showOpenAnim, setShowOpenAnim] = useState(true);
   const preSnapRef = useRef<Rect | null>(null);
   const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const openAnimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resolvedRect = resolveRect(state, viewport);
 
   useEffect(() => {
-    openAnimTimer.current = setTimeout(() => {
-      setShowOpenAnim(false);
-      openAnimTimer.current = null;
-    }, 450);
-
     return () => {
-      if (openAnimTimer.current) {
-        clearTimeout(openAnimTimer.current);
-      }
       if (animTimer.current) {
         clearTimeout(animTimer.current);
       }
@@ -298,17 +298,6 @@ export function useWindowState() {
     }, 500);
   }, []);
 
-  const scheduleOpenAnimClear = useCallback(() => {
-    if (openAnimTimer.current) {
-      clearTimeout(openAnimTimer.current);
-    }
-
-    openAnimTimer.current = setTimeout(() => {
-      setShowOpenAnim(false);
-      openAnimTimer.current = null;
-    }, 400);
-  }, []);
-
   const moveToRaw = useCallback((x: number, y: number) => {
     setState((current) => ({
       ...current,
@@ -318,6 +307,7 @@ export function useWindowState() {
       isMaximized: false,
       snapZone: null,
       usesDefaultRect: false,
+      transitionPhase: "idle",
     }));
   }, []);
 
@@ -333,6 +323,7 @@ export function useWindowState() {
         isMaximized: false,
         snapZone: null,
         usesDefaultRect: false,
+        transitionPhase: "idle",
       }));
     },
     [],
@@ -352,6 +343,7 @@ export function useWindowState() {
           isMaximized: false,
           snapZone: null,
           usesDefaultRect: false,
+          transitionPhase: "idle",
         };
       });
     },
@@ -369,6 +361,7 @@ export function useWindowState() {
           isMaximized: false,
           snapZone: null,
           usesDefaultRect: false,
+          transitionPhase: "idle",
         };
       });
     },
@@ -387,6 +380,7 @@ export function useWindowState() {
           snapZone: null,
           isAnimating: true,
           usesDefaultRect: false,
+          transitionPhase: "idle",
         };
       }
 
@@ -397,54 +391,105 @@ export function useWindowState() {
         snapZone: "top",
         isAnimating: true,
         usesDefaultRect: false,
+        transitionPhase: "idle",
       };
     });
     scheduleAnimClear();
   }, [scheduleAnimClear, viewport]);
 
   const minimize = useCallback(() => {
-    setState((current) => ({
-      ...current,
-      isMinimized: true,
-      isAnimating: true,
-    }));
-    scheduleAnimClear();
-  }, [scheduleAnimClear]);
+    setState((current) => {
+      if (
+        current.transitionPhase !== "idle" ||
+        current.isMinimized ||
+        current.isClosed
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        isAnimating: false,
+        transitionPhase: "minimizing-genie",
+        transitionKey: current.transitionKey + 1,
+      };
+    });
+  }, []);
+
+  const minimizeImmediately = useCallback(() => {
+    setState((current) => {
+      if (
+        current.transitionPhase !== "idle" ||
+        current.isMinimized ||
+        current.isClosed
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        isMinimized: true,
+        isAnimating: false,
+        transitionPhase: "idle",
+      };
+    });
+  }, []);
 
   const restore = useCallback(() => {
-    setState((current) => ({
-      ...current,
-      isMinimized: false,
-      isAnimating: true,
-    }));
-    scheduleAnimClear();
-  }, [scheduleAnimClear]);
+    setState((current) => {
+      if (current.transitionPhase !== "idle" || !current.isMinimized) {
+        return current;
+      }
+
+      return {
+        ...current,
+        isAnimating: false,
+        transitionPhase: "restoring-genie",
+        transitionKey: current.transitionKey + 1,
+      };
+    });
+  }, []);
+
+  const restoreImmediately = useCallback(() => {
+    setState((current) => {
+      if (current.transitionPhase !== "idle" || !current.isMinimized) {
+        return current;
+      }
+
+      return {
+        ...current,
+        isMinimized: false,
+        isAnimating: false,
+        transitionPhase: "idle",
+      };
+    });
+  }, []);
 
   const close = useCallback(() => {
     setState((current) => ({
       ...current,
       isClosed: true,
       isAnimating: true,
+      transitionPhase: "idle",
     }));
     scheduleAnimClear();
   }, [scheduleAnimClear]);
 
   const reopen = useCallback(() => {
-    setState({
+    setState((current) => ({
       ...DEFAULT_RECT,
       preMaximize: null,
       preSnap: null,
       isMaximized: false,
       isMinimized: false,
       isClosed: false,
-      isAnimating: true,
+      isAnimating: false,
       snapZone: null,
       usesDefaultRect: true,
-    });
-    setShowOpenAnim(true);
-    scheduleOpenAnimClear();
-    scheduleAnimClear();
-  }, [scheduleAnimClear, scheduleOpenAnimClear]);
+      transitionPhase: "opening-genie",
+      transitionKey: current.transitionKey + 1,
+    }));
+  }, []);
 
   const snapTo = useCallback(
     (zone: SnapZone) => {
@@ -463,6 +508,7 @@ export function useWindowState() {
         isAnimating: true,
         snapZone: zone,
         usesDefaultRect: false,
+        transitionPhase: "idle",
       }));
       preSnapRef.current = null;
       scheduleAnimClear();
@@ -485,6 +531,7 @@ export function useWindowState() {
         isMaximized: false,
         snapZone: null,
         usesDefaultRect: false,
+        transitionPhase: "idle",
       };
     });
   }, [viewport]);
@@ -509,6 +556,7 @@ export function useWindowState() {
         ...current,
         ...nextRect,
         usesDefaultRect: false,
+        transitionPhase: "idle",
       };
     });
     setDragSnapZone(null);
@@ -525,20 +573,46 @@ export function useWindowState() {
     );
   }, []);
 
+  const finishGenieTransition = useCallback(() => {
+    setState((current) => {
+      switch (current.transitionPhase) {
+        case "opening-genie":
+        case "restoring-genie":
+          return {
+            ...current,
+            isClosed: false,
+            isMinimized: false,
+            isAnimating: false,
+            transitionPhase: "idle",
+          };
+        case "minimizing-genie":
+          return {
+            ...current,
+            isMinimized: true,
+            isAnimating: false,
+            transitionPhase: "idle",
+          };
+        default:
+          return current;
+      }
+    });
+  }, []);
+
   return {
     state: {
       ...state,
       ...resolvedRect,
     },
     dragSnapZone,
-    showOpenAnim,
     moveToRaw,
     resizeToRaw,
     moveTo,
     resizeTo,
     maximize,
     minimize,
+    minimizeImmediately,
     restore,
+    restoreImmediately,
     close,
     reopen,
     snapTo,
@@ -546,5 +620,6 @@ export function useWindowState() {
     onDragMove,
     endDrag,
     clearAnimation,
+    finishGenieTransition,
   };
 }
