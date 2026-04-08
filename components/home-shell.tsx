@@ -4,6 +4,7 @@ import { toPng } from "html-to-image";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -47,7 +48,10 @@ export function HomeShell() {
     () => readCachedWindowSnapshot(),
   );
   const [genieSnapshot, setGenieSnapshot] = useState<GenieSnapshot | null>(null);
+  const [genieHasTakenOver, setGenieHasTakenOver] = useState(false);
+  const [genieWindowRect, setGenieWindowRect] = useState<Rect | null>(null);
   const liveWindowRef = useRef<HTMLDivElement | null>(null);
+  const liveSurfaceRef = useRef<HTMLDivElement | null>(null);
   const lastSnapshotRef = useRef<string | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isCapturingRef = useRef(false);
@@ -89,15 +93,33 @@ export function HomeShell() {
   const showGenie =
     isGeniePhase(geniePhase) &&
     launcherRect !== null &&
-    activeSnapshot !== null;
+    activeSnapshot !== null &&
+    genieWindowRect !== null;
   const showFallbackOpen =
     geniePhase === "opening-genie" && activeSnapshot === null;
   const renderMacWindow = !isClosed || isAnimating;
 
   const handleGenieComplete = useCallback(() => {
+    setGenieHasTakenOver(false);
+    setGenieWindowRect(null);
     setGenieSnapshot(null);
     finishGenieTransition();
   }, [finishGenieTransition]);
+
+  const handleGenieTakeover = useCallback(() => {
+    setGenieHasTakenOver(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    setGenieHasTakenOver(false);
+
+    if (!isGeniePhase(geniePhase)) {
+      setGenieWindowRect(null);
+      return;
+    }
+
+    setGenieWindowRect(measureWindowRect(liveSurfaceRef.current) ?? windowRect);
+  }, [geniePhase, transitionKey, windowRect]);
 
   const persistSnapshot = useCallback(
     (src: string) => {
@@ -133,7 +155,7 @@ export function HomeShell() {
       isAnimating ||
       isClosed ||
       isMinimized ||
-      !liveWindowRef.current
+      !liveSurfaceRef.current
     ) {
       return;
     }
@@ -141,7 +163,7 @@ export function HomeShell() {
     isCapturingRef.current = true;
 
     try {
-      const src = await captureWindow(liveWindowRef.current);
+      const src = await captureWindow(liveSurfaceRef.current);
       persistSnapshot(src);
     } catch {
       // Keep the last successful snapshot.
@@ -316,14 +338,15 @@ export function HomeShell() {
       onLauncherTriggerRectChange={setLauncherRect}
       onClaudeLaunch={handleClaudeLaunch}
     >
-      {showGenie && launcherRect && activeSnapshot ? (
+      {showGenie && launcherRect && activeSnapshot && genieWindowRect ? (
         <GenieWindowOverlay
           key={transitionKey}
           phase={geniePhase}
           imageSrc={activeSnapshot}
-          windowRect={windowRect}
+          windowRect={genieWindowRect}
           targetRect={launcherRect}
           animationKey={transitionKey}
+          onTakeover={handleGenieTakeover}
           onComplete={handleGenieComplete}
         />
       ) : null}
@@ -331,14 +354,29 @@ export function HomeShell() {
       {renderMacWindow ? (
         <MacWindow
           ref={liveWindowRef}
+          surfaceRef={liveSurfaceRef}
           x={windowRect.x}
           y={windowRect.y}
           width={windowRect.width}
           height={windowRect.height}
           showOpenIntro={showFallbackOpen}
           disableInteraction={isGeniePhase(geniePhase)}
-          hideVisual={isGeniePhase(geniePhase)}
-          visualOpacity={isGeniePhase(geniePhase) ? 0 : 1}
+          hideVisual={
+            geniePhase === "minimizing-genie"
+              ? genieHasTakenOver
+              : geniePhase === "opening-genie" || geniePhase === "restoring-genie"
+                ? true
+                : false
+          }
+          visualOpacity={
+            geniePhase === "minimizing-genie"
+              ? genieHasTakenOver
+                ? 0
+                : 1
+              : geniePhase === "opening-genie" || geniePhase === "restoring-genie"
+                ? 0
+                : 1
+          }
           isAnimating={isAnimating}
           isMinimized={isMinimized}
           isClosed={isClosed}
@@ -365,4 +403,18 @@ function waitForNextFrame() {
   return new Promise<void>((resolve) => {
     window.requestAnimationFrame(() => resolve());
   });
+}
+
+function measureWindowRect(node: HTMLDivElement | null): Rect | null {
+  if (!node) {
+    return null;
+  }
+
+  const rect = node.getBoundingClientRect();
+  return {
+    x: rect.left,
+    y: rect.top,
+    width: rect.width,
+    height: rect.height,
+  };
 }

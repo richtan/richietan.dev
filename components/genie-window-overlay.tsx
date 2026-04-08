@@ -21,6 +21,7 @@ interface GenieWindowOverlayProps {
   windowRect: Rect;
   targetRect: Rect;
   animationKey: number;
+  onTakeover?: () => void;
   onComplete: () => void;
 }
 
@@ -47,10 +48,12 @@ export function GenieWindowOverlay({
   windowRect,
   targetRect,
   animationKey,
+  onTakeover,
   onComplete,
 }: GenieWindowOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const hasTakenOverRef = useRef(false);
   const towardIcon = phase === "minimizing-genie";
   const collapseTarget = useMemo(
     () => insetRect(targetRect, TARGET_INSET_X, TARGET_INSET_Y),
@@ -85,6 +88,10 @@ export function GenieWindowOverlay({
       nextImage.onload = null;
     };
   }, [imageSrc]);
+
+  useEffect(() => {
+    hasTakenOverRef.current = false;
+  }, [animationKey]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -152,7 +159,21 @@ export function GenieWindowOverlay({
         mesh,
       });
 
+      if (!hasTakenOverRef.current) {
+        hasTakenOverRef.current = true;
+        onTakeover?.();
+      }
+
       if (linearProgress >= 1) {
+        if (!towardIcon) {
+          window.requestAnimationFrame(() => {
+            if (!cancelled) {
+              onComplete();
+            }
+          });
+          return;
+        }
+
         onComplete();
         return;
       }
@@ -172,6 +193,7 @@ export function GenieWindowOverlay({
     collapseTarget,
     image,
     meshConfig,
+    onTakeover,
     onComplete,
     sourceCells,
     towardIcon,

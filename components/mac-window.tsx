@@ -5,6 +5,7 @@ import {
   useCallback,
   useRef,
   type CSSProperties,
+  type Ref,
   type ReactNode,
 } from "react";
 
@@ -15,6 +16,7 @@ interface MacWindowProps {
   width: number;
   height: number;
   showOpenIntro?: boolean;
+  surfaceRef?: Ref<HTMLDivElement>;
   disableInteraction?: boolean;
   visualOpacity?: number;
   visualOpacityTransition?: string;
@@ -47,6 +49,7 @@ export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function Mac
   width,
   height,
   showOpenIntro = false,
+  surfaceRef,
   disableInteraction = false,
   visualOpacity = 1,
   visualOpacityTransition,
@@ -260,6 +263,7 @@ export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function Mac
       ) : null}
 
       <div
+        ref={surfaceRef}
         className="flex h-full w-full flex-col overflow-hidden rounded-[10px]"
         style={{
           boxShadow:

@@ -3,7 +3,7 @@
 import type { Rect } from "@/lib/use-window-state";
 
 const SNAPSHOT_CACHE_KEY = "richietan.dev::claude-window-snapshot";
-const SNAPSHOT_CACHE_VERSION = 2;
+const SNAPSHOT_CACHE_VERSION = 3;
 const SNAPSHOT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 3;
 
 export interface CachedWindowSnapshot {
@@ -96,5 +96,5 @@ export function isCachedWindowSnapshotCompatible(
     snapshot.width / snapshot.height - rect.width / rect.height,
   );
 
-  return widthDelta <= 64 && heightDelta <= 64 && aspectDelta <= 0.015;
+  return widthDelta <= 8 && heightDelta <= 8 && aspectDelta <= 0.004;
 }
