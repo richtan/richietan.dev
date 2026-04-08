@@ -45,17 +45,23 @@ const BURST_RAYS = [
 ];
 
 const OPEN_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+const SPOTLIGHT_ANIMATION_MS = 340;
+const SPOTLIGHT_OPEN_SCALE_TIMING =
+  "linear(0, 0.0258 2.5%, 0.0933 5%, 0.1892 7.5%, 0.3019 10%, 0.4219 12.5%, 0.5413 15%, 0.6546 17.5%, 0.7575 20%, 0.8476 22.5%, 0.9234 25%, 0.9847 27.5%, 1.032 30%, 1.0663 32.5%, 1.089 35%, 1.1019 37.5%, 1.1067 40%, 1.105 42.5%, 1.0986 45%, 1.0889 47.5%, 1.0771 50%, 1.0644 52.5%, 1.0516 55%, 1.0393 57.5%, 1.028 60%, 1.0181 62.5%, 1.0097 65%, 1.0028 67.5%, 0.9975 70%, 0.9936 72.5%, 0.9909 75%, 0.9893 77.5%, 0.9886 80%, 0.9887 82.5%, 0.9893 85%, 0.9903 87.5%, 0.9915 90%, 0.9928 92.5%, 0.9942 95%, 0.9955 97.5%, 1)";
 
 export function AppLauncher({
   claudeStatus,
   onClaudeLaunch,
 }: AppLauncherProps) {
-  const [open, setOpen] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const normalizedQuery = query.trim().toLowerCase();
   const showResultsRegion = normalizedQuery.length > 0;
+  const open = isVisible && !isClosing;
 
   const filteredApps = useMemo(() => {
     if (!normalizedQuery) {
@@ -85,10 +91,32 @@ export function AppLauncher({
     return () => window.cancelAnimationFrame(frame);
   }, [open]);
 
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
+
   function closeLauncher() {
-    setOpen(false);
-    setQuery("");
-    setActiveIndex(0);
+    if (!isVisible || isClosing) {
+      return;
+    }
+
+    setIsClosing(true);
+
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+    }
+
+    closeTimerRef.current = setTimeout(() => {
+      setIsVisible(false);
+      setIsClosing(false);
+      setQuery("");
+      setActiveIndex(0);
+      closeTimerRef.current = null;
+    }, SPOTLIGHT_ANIMATION_MS);
   }
 
   function launchApp(app: LauncherApp | undefined) {
@@ -108,7 +136,13 @@ export function AppLauncher({
       return;
     }
 
-    setOpen(true);
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+
+    setIsVisible(true);
+    setIsClosing(false);
     setQuery("");
     setActiveIndex(0);
   }
@@ -169,12 +203,12 @@ export function AppLauncher({
         <TriggerSearchGlyph />
       </button>
 
-      {open ? (
+      {isVisible ? (
         <div className="absolute inset-0 z-50">
           <button
             type="button"
             aria-label="Close launcher"
-            className="absolute inset-0 h-full w-full cursor-default bg-black/10"
+            className="absolute inset-0 h-full w-full cursor-default bg-transparent"
             onClick={closeLauncher}
           />
 
@@ -186,7 +220,9 @@ export function AppLauncher({
               className="pointer-events-auto"
               style={{
                 width: "min(650px, calc(100vw - 5rem))",
-                animation: `windowOpen 0.22s ${OPEN_EASE} forwards`,
+                animation: isClosing
+                  ? `spotlightCloseScale ${SPOTLIGHT_ANIMATION_MS}ms ${OPEN_EASE} forwards, spotlightFadeOut ${SPOTLIGHT_ANIMATION_MS}ms ease-out forwards`
+                  : `spotlightOpenScale ${SPOTLIGHT_ANIMATION_MS}ms ${SPOTLIGHT_OPEN_SCALE_TIMING} forwards, spotlightFadeIn ${SPOTLIGHT_ANIMATION_MS}ms ease-out forwards`,
               }}
             >
               <div
