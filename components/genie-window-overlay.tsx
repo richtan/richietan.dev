@@ -5,15 +5,19 @@ import type { Rect, WindowTransitionPhase } from "@/lib/use-window-state";
 
 const TARGET_INSET_X = 7;
 const TARGET_INSET_Y = 7;
-const MAX_CANVAS_DPR = 1.2;
-const MIN_GRID_COLS = 10;
-const MAX_GRID_COLS = 15;
-const MIN_GRID_ROWS = 14;
-const MAX_GRID_ROWS = 20;
-const TARGET_CELL_SIZE_X = 74;
-const TARGET_CELL_SIZE_Y = 46;
+const DEGRADE_FRAME_MS = 22;
+const DEGRADE_STREAK = 3;
+const OFFSCREEN_PAD = 6;
+const PHASE_LOW_START = 0.08;
+const PHASE_LOW_END = 0.92;
+const BAND_OVERLAP = 0.18;
+const FLAT_COLLAPSE_THRESHOLD = 0.1;
+const FULL_IMAGE_COLLAPSE_THRESHOLD = 0.065;
 
 export const GENIE_DURATION_MS = 460;
+
+type QualityMode = "high" | "medium" | "low";
+type SnapshotSource = HTMLImageElement | ImageBitmap;
 
 interface GenieWindowOverlayProps {
   phase: Exclude<WindowTransitionPhase, "idle">;
@@ -25,22 +29,97 @@ interface GenieWindowOverlayProps {
   onComplete: () => void;
 }
 
-interface Point {
-  x: number;
-  y: number;
-}
-
-interface SourceCell {
-  topLeft: Point;
-  topRight: Point;
-  bottomRight: Point;
-  bottomLeft: Point;
-}
-
-interface MeshConfig {
+interface MeshProfile {
+  mode: QualityMode;
   cols: number;
   rows: number;
+  dprCap: number;
+  rowData: RowData[];
+  colData: ColData[];
+  meshBuffer: Float32Array;
 }
+
+interface RowData {
+  v: number;
+  band: number;
+  profile: number;
+  verticalLag: number;
+  cornerLag: number;
+  stretch: number;
+}
+
+interface ColData {
+  u: number;
+  horizontalLag: number;
+  cornerLag: number;
+  neck: number;
+  stretch: number;
+}
+
+const QUALITY_PRESETS: Record<
+  QualityMode,
+  {
+    dprCap: number;
+    minCols: number;
+    maxCols: number;
+    minRows: number;
+    maxRows: number;
+    targetCellX: number;
+    targetCellY: number;
+    inflation: number;
+    tinyQuadArea: number;
+    subdivideQuadArea: number;
+    microSubdivideQuadArea: number;
+    subdivideDistortion: number;
+    microSubdivideDistortion: number;
+  }
+> = {
+  high: {
+    dprCap: 1,
+    minCols: 12,
+    maxCols: 15,
+    minRows: 14,
+    maxRows: 19,
+    targetCellX: 86,
+    targetCellY: 52,
+    inflation: 0.28,
+    tinyQuadArea: 1,
+    subdivideQuadArea: 2_500,
+    microSubdivideQuadArea: 5_000,
+    subdivideDistortion: 0.038,
+    microSubdivideDistortion: 0.082,
+  },
+  medium: {
+    dprCap: 0.92,
+    minCols: 10,
+    maxCols: 13,
+    minRows: 12,
+    maxRows: 17,
+    targetCellX: 102,
+    targetCellY: 60,
+    inflation: 0.2,
+    tinyQuadArea: 1.45,
+    subdivideQuadArea: 3_600,
+    microSubdivideQuadArea: 6_200,
+    subdivideDistortion: 0.046,
+    microSubdivideDistortion: 0.095,
+  },
+  low: {
+    dprCap: 0.8,
+    minCols: 8,
+    maxCols: 10,
+    minRows: 10,
+    maxRows: 13,
+    targetCellX: 132,
+    targetCellY: 76,
+    inflation: 0.14,
+    tinyQuadArea: 2,
+    subdivideQuadArea: 6_000,
+    microSubdivideQuadArea: 9_000,
+    subdivideDistortion: 0.058,
+    microSubdivideDistortion: 0.11,
+  },
+};
 
 export function GenieWindowOverlay({
   phase,
@@ -52,40 +131,63 @@ export function GenieWindowOverlay({
   onComplete,
 }: GenieWindowOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [imageSource, setImageSource] = useState<SnapshotSource | null>(null);
   const hasTakenOverRef = useRef(false);
   const towardIcon = phase === "minimizing-genie";
   const collapseTarget = useMemo(
     () => insetRect(targetRect, TARGET_INSET_X, TARGET_INSET_Y),
     [targetRect],
   );
-  const meshConfig = useMemo(() => getMeshConfig(windowRect), [windowRect]);
-  const sourceCells = useMemo(
-    () => buildSourceCells(windowRect, meshConfig),
-    [meshConfig, windowRect],
-  );
+  const profiles = useMemo(() => createProfiles(windowRect), [windowRect]);
 
   useEffect(() => {
     let cancelled = false;
+    let bitmap: ImageBitmap | null = null;
     const nextImage = new Image();
     nextImage.decoding = "async";
 
-    const finalize = () => {
-      if (!cancelled) {
-        setImage(nextImage);
+    const finalize = async () => {
+      let resolvedSource: SnapshotSource = nextImage;
+
+      if ("createImageBitmap" in window) {
+        try {
+          bitmap = await createImageBitmap(nextImage);
+          resolvedSource = bitmap;
+        } catch {
+          bitmap = null;
+        }
       }
+
+      if (!cancelled) {
+        setImageSource(resolvedSource);
+        return;
+      }
+
+      bitmap?.close();
     };
 
-    nextImage.onload = finalize;
+    nextImage.onload = () => {
+      if (nextImage.complete) {
+        void nextImage.decode().catch(() => undefined).finally(() => {
+          void finalize();
+        });
+        return;
+      }
+
+      void finalize();
+    };
     nextImage.src = imageSrc;
 
     if (nextImage.complete) {
-      void nextImage.decode().catch(() => undefined).finally(finalize);
+      void nextImage.decode().catch(() => undefined).finally(() => {
+        void finalize();
+      });
     }
 
     return () => {
       cancelled = true;
       nextImage.onload = null;
+      bitmap?.close();
     };
   }, [imageSrc]);
 
@@ -101,7 +203,7 @@ export function GenieWindowOverlay({
     }
 
     const canvas = canvasRef.current;
-    if (!canvas || !image) {
+    if (!canvas || !imageSource) {
       return;
     }
 
@@ -113,23 +215,38 @@ export function GenieWindowOverlay({
 
     let frameId = 0;
     let startTime = 0;
+    let previousFrameTime = 0;
+    let slowFrameStreak = 0;
     let cancelled = false;
+    let currentBaseQuality = getInitialQuality(windowRect);
+    let currentCanvasDpr = 0;
 
-    const resizeCanvas = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, MAX_CANVAS_DPR);
+    const resizeCanvas = (dprCap: number) => {
+      const nextDpr = Math.min(window.devicePixelRatio || 1, dprCap);
       const width = window.innerWidth;
       const height = window.innerHeight;
-      canvas.width = Math.max(1, Math.round(width * dpr));
-      canvas.height = Math.max(1, Math.round(height * dpr));
+
+      if (
+        currentCanvasDpr === nextDpr &&
+        canvas.width === Math.max(1, Math.round(width * nextDpr)) &&
+        canvas.height === Math.max(1, Math.round(height * nextDpr))
+      ) {
+        return { dpr: nextDpr, width, height };
+      }
+
+      currentCanvasDpr = nextDpr;
+      canvas.width = Math.max(1, Math.round(width * nextDpr));
+      canvas.height = Math.max(1, Math.round(height * nextDpr));
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
-      return { dpr, width, height };
+
+      return { dpr: nextDpr, width, height };
     };
 
-    let viewport = resizeCanvas();
+    let viewport = resizeCanvas(profiles[currentBaseQuality].dprCap);
 
     const handleResize = () => {
-      viewport = resizeCanvas();
+      viewport = resizeCanvas(profiles[currentBaseQuality].dprCap);
     };
 
     window.addEventListener("resize", handleResize);
@@ -141,22 +258,42 @@ export function GenieWindowOverlay({
 
       if (startTime === 0) {
         startTime = timestamp;
+        previousFrameTime = timestamp;
       }
 
-      const elapsed = timestamp - startTime;
-      const linearProgress = clamp(elapsed / GENIE_DURATION_MS, 0, 1);
+      const frameDuration = timestamp - previousFrameTime;
+      previousFrameTime = timestamp;
+
+      if (frameDuration > DEGRADE_FRAME_MS) {
+        slowFrameStreak += 1;
+      } else {
+        slowFrameStreak = 0;
+      }
+
+      if (slowFrameStreak >= DEGRADE_STREAK) {
+        const degradedQuality = demoteQuality(currentBaseQuality);
+        if (degradedQuality !== currentBaseQuality) {
+          currentBaseQuality = degradedQuality;
+          viewport = resizeCanvas(profiles[currentBaseQuality].dprCap);
+        }
+        slowFrameStreak = 0;
+      }
+
+      const linearProgress = clamp((timestamp - startTime) / GENIE_DURATION_MS, 0, 1);
       const eased = easeInOutCubic(linearProgress);
       const collapse = towardIcon ? eased : 1 - eased;
-      const mesh = buildMesh(windowRect, collapseTarget, collapse, meshConfig);
+      const renderQuality = getPhaseQuality(currentBaseQuality, linearProgress);
+      const profile = profiles[renderQuality];
+
+      fillMeshBuffer(profile, windowRect, collapseTarget, collapse);
 
       drawMeshFrame({
         context,
-        image,
-        viewport,
+        imageSource,
         sourceRect: windowRect,
-        sourceCells,
-        meshConfig,
-        mesh,
+        viewport,
+        profile,
+        collapse,
       });
 
       if (!hasTakenOverRef.current) {
@@ -191,11 +328,10 @@ export function GenieWindowOverlay({
   }, [
     animationKey,
     collapseTarget,
-    image,
-    meshConfig,
-    onTakeover,
+    imageSource,
     onComplete,
-    sourceCells,
+    onTakeover,
+    profiles,
     towardIcon,
     windowRect,
   ]);
@@ -213,343 +349,325 @@ export function GenieWindowOverlay({
 
 function drawMeshFrame({
   context,
-  image,
-  viewport,
+  imageSource,
   sourceRect,
-  sourceCells,
-  meshConfig,
-  mesh,
+  viewport,
+  profile,
+  collapse,
 }: {
   context: CanvasRenderingContext2D;
-  image: HTMLImageElement;
-  viewport: { dpr: number; width: number; height: number };
+  imageSource: SnapshotSource;
   sourceRect: Rect;
-  sourceCells: SourceCell[];
-  meshConfig: MeshConfig;
-  mesh: Point[];
+  viewport: { dpr: number; width: number; height: number };
+  profile: MeshProfile;
+  collapse: number;
 }) {
   const { dpr, width, height } = viewport;
-  const { cols, rows } = meshConfig;
+  const { cols, rows, meshBuffer, mode } = profile;
 
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
   context.clearRect(0, 0, width, height);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
 
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const cellIndex = row * cols + col;
-      const sourceCell = sourceCells[cellIndex];
-      if (!sourceCell) {
-        continue;
-      }
-
-      const topLeft = mesh[getMeshIndex(row, col, cols)];
-      const topRight = mesh[getMeshIndex(row, col + 1, cols)];
-      const bottomRight = mesh[getMeshIndex(row + 1, col + 1, cols)];
-      const bottomLeft = mesh[getMeshIndex(row + 1, col, cols)];
-
-      if (!topLeft || !topRight || !bottomRight || !bottomLeft) {
-        continue;
-      }
-
-      const even = (row + col) % 2 === 0;
-
-      if (even) {
-        drawTexturedTriangle(
-          context,
-          image,
-          sourceRect,
-          [sourceCell.topLeft, sourceCell.topRight, sourceCell.bottomRight],
-          inflateTriangle([topLeft, topRight, bottomRight], 0.42),
-        );
-        drawTexturedTriangle(
-          context,
-          image,
-          sourceRect,
-          [sourceCell.topLeft, sourceCell.bottomRight, sourceCell.bottomLeft],
-          inflateTriangle([topLeft, bottomRight, bottomLeft], 0.42),
-        );
-      } else {
-        drawTexturedTriangle(
-          context,
-          image,
-          sourceRect,
-          [sourceCell.topLeft, sourceCell.topRight, sourceCell.bottomLeft],
-          inflateTriangle([topLeft, topRight, bottomLeft], 0.42),
-        );
-        drawTexturedTriangle(
-          context,
-          image,
-          sourceRect,
-          [sourceCell.topRight, sourceCell.bottomRight, sourceCell.bottomLeft],
-          inflateTriangle([topRight, bottomRight, bottomLeft], 0.42),
-        );
-      }
-    }
-  }
-}
-
-function drawTexturedTriangle(
-  context: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  sourceRect: Rect,
-  sourceTriangle: [Point, Point, Point],
-  destinationTriangle: [Point, Point, Point],
-) {
-  const transform = solveAffineTransform(sourceTriangle, destinationTriangle);
-  if (!transform) {
+  if (collapse <= FULL_IMAGE_COLLAPSE_THRESHOLD) {
+    context.drawImage(
+      imageSource,
+      0,
+      0,
+      sourceRect.width,
+      sourceRect.height,
+      sourceRect.x,
+      sourceRect.y,
+      sourceRect.width,
+      sourceRect.height,
+    );
     return;
   }
 
-  context.save();
-  context.beginPath();
-  context.moveTo(destinationTriangle[0].x, destinationTriangle[0].y);
-  context.lineTo(destinationTriangle[1].x, destinationTriangle[1].y);
-  context.lineTo(destinationTriangle[2].x, destinationTriangle[2].y);
-  context.closePath();
-  context.clip();
-
-  context.transform(
-    transform.a,
-    transform.b,
-    transform.c,
-    transform.d,
-    transform.e,
-    transform.f,
-  );
-  context.drawImage(image, 0, 0, sourceRect.width, sourceRect.height);
-  context.restore();
-}
-
-function buildSourceCells(rect: Rect, meshConfig: MeshConfig): SourceCell[] {
-  const cells: SourceCell[] = [];
-  const { cols, rows } = meshConfig;
+  const bandSubdivisions = getBandSubdivisions(mode, collapse);
 
   for (let row = 0; row < rows; row += 1) {
-    const y0 = rect.height * (row / rows);
-    const y1 = rect.height * ((row + 1) / rows);
+    const leftTopIndex = getMeshIndex(row, 0, cols);
+    const rightTopIndex = getMeshIndex(row, cols, cols);
+    const leftBottomIndex = getMeshIndex(row + 1, 0, cols);
+    const rightBottomIndex = getMeshIndex(row + 1, cols, cols);
 
-    for (let col = 0; col < cols; col += 1) {
-      const x0 = rect.width * (col / cols);
-      const x1 = rect.width * ((col + 1) / cols);
+    const leftTop = {
+      x: meshBuffer[leftTopIndex]!,
+      y: meshBuffer[leftTopIndex + 1]!,
+    };
+    const rightTop = {
+      x: meshBuffer[rightTopIndex]!,
+      y: meshBuffer[rightTopIndex + 1]!,
+    };
+    const leftBottom = {
+      x: meshBuffer[leftBottomIndex]!,
+      y: meshBuffer[leftBottomIndex + 1]!,
+    };
+    const rightBottom = {
+      x: meshBuffer[rightBottomIndex]!,
+      y: meshBuffer[rightBottomIndex + 1]!,
+    };
 
-      cells.push({
-        topLeft: { x: x0, y: y0 },
-        topRight: { x: x1, y: y0 },
-        bottomRight: { x: x1, y: y1 },
-        bottomLeft: { x: x0, y: y1 },
-      });
+    for (let band = 0; band < bandSubdivisions; band += 1) {
+      const t0 = band / bandSubdivisions;
+      const t1 = (band + 1) / bandSubdivisions;
+      const overlapT = bandSubdivisions > 1 ? BAND_OVERLAP / bandSubdivisions : 0;
+      const sampleT0 = Math.max(0, t0 - overlapT);
+      const sampleT1 = Math.min(1, t1 + overlapT);
+      const quadTl = midpointLerp(
+        leftTop.x,
+        leftTop.y,
+        leftBottom.x,
+        leftBottom.y,
+        sampleT0,
+      );
+      const quadTr = midpointLerp(
+        rightTop.x,
+        rightTop.y,
+        rightBottom.x,
+        rightBottom.y,
+        sampleT0,
+      );
+      const quadBl = midpointLerp(
+        leftTop.x,
+        leftTop.y,
+        leftBottom.x,
+        leftBottom.y,
+        sampleT1,
+      );
+      const quadBr = midpointLerp(
+        rightTop.x,
+        rightTop.y,
+        rightBottom.x,
+        rightBottom.y,
+        sampleT1,
+      );
+
+      const minX = Math.min(quadTl.x, quadTr.x, quadBr.x, quadBl.x);
+      const maxX = Math.max(quadTl.x, quadTr.x, quadBr.x, quadBl.x);
+      const minY = Math.min(quadTl.y, quadTr.y, quadBr.y, quadBl.y);
+      const maxY = Math.max(quadTl.y, quadTr.y, quadBr.y, quadBl.y);
+
+      if (
+        maxX < -OFFSCREEN_PAD ||
+        minX > width + OFFSCREEN_PAD ||
+        maxY < -OFFSCREEN_PAD ||
+        minY > height + OFFSCREEN_PAD
+      ) {
+        continue;
+      }
+
+      const drawWidth = Math.max(
+        1,
+        ((quadTr.x - quadTl.x) + (quadBr.x - quadBl.x)) / 2 + 1,
+      );
+      const drawHeight = Math.max(1, maxY - minY + 1);
+      if (drawWidth * drawHeight <= 1) {
+        continue;
+      }
+
+      const sourceY = sourceRect.height * ((row + sampleT0) / rows);
+      const sourceHeight = Math.max(
+        1 / Math.max(1, dpr),
+        sourceRect.height * ((sampleT1 - sampleT0) / rows),
+      );
+      const averageLeftX = (quadTl.x + quadBl.x) / 2 - 0.5;
+
+      context.save();
+      context.beginPath();
+      context.moveTo(quadTl.x, quadTl.y);
+      context.lineTo(quadTr.x, quadTr.y);
+      context.lineTo(quadBr.x, quadBr.y);
+      context.lineTo(quadBl.x, quadBl.y);
+      context.closePath();
+      context.clip();
+      context.drawImage(
+        imageSource,
+        0,
+        sourceY,
+        sourceRect.width,
+        sourceHeight,
+        averageLeftX,
+        minY - 0.5,
+        drawWidth,
+        drawHeight,
+      );
+      context.restore();
     }
   }
-
-  return cells;
 }
 
-function buildMesh(
-  sourceRect: Rect,
-  targetRect: Rect,
-  collapse: number,
-  meshConfig: MeshConfig,
-): Point[] {
-  const mesh: Point[] = [];
-  const { cols, rows } = meshConfig;
-
-  for (let row = 0; row <= rows; row += 1) {
-    const v = row / rows;
-
-    for (let col = 0; col <= cols; col += 1) {
-      const u = col / cols;
-      mesh.push(getWarpedPoint(sourceRect, targetRect, u, v, collapse));
-    }
-  }
-
-  return mesh;
+function createProfiles(rect: Rect): Record<QualityMode, MeshProfile> {
+  return {
+    high: createMeshProfile(rect, "high"),
+    medium: createMeshProfile(rect, "medium"),
+    low: createMeshProfile(rect, "low"),
+  };
 }
 
-function getWarpedPoint(
-  sourceRect: Rect,
-  targetRect: Rect,
-  u: number,
-  v: number,
-  collapse: number,
-): Point {
-  const sourceX = sourceRect.x + sourceRect.width * u;
-  const sourceY = sourceRect.y + sourceRect.height * v;
-
-  if (collapse <= 0.0001) {
-    return { x: sourceX, y: sourceY };
-  }
-
-  const targetRow = getTargetRow(targetRect, v);
-  const finalX = targetRow.left + targetRow.width * u;
-  const finalY = targetRow.top;
-
-  const horizontalLag = Math.pow(1 - u, 1.9) * 0.62;
-  const verticalLag = Math.pow(1 - v, 1.5) * 0.22;
-  const cornerLag =
-    Math.pow(1 - u, 1.15) * Math.pow(Math.abs(v - 0.5) * 2, 1.18) * 0.085;
-  const lag = Math.min(0.87, horizontalLag + verticalLag + cornerLag);
-
-  const pullX = smoothstep(lag * 0.42, 1, collapse);
-  const pullY = smoothstep(lag * 0.82, 1, collapse);
-
-  let x = mix(sourceX, finalX, pullX);
-  let y = mix(sourceY, finalY, pullY);
-
-  const targetCenterX = targetRect.x + targetRect.width / 2;
-  const centerBand = Math.sin(v * Math.PI);
-  const neckPull =
-    smoothstep(0.16, 0.94, collapse) *
-    Math.pow(1 - u, 0.72) *
-    (0.095 + centerBand * 0.08);
-  x += (targetCenterX - x) * neckPull;
-
-  const verticalStretch =
-    smoothstep(0.24, 1, collapse) *
-    Math.pow(1 - u, 0.68) *
-    Math.pow(1 - v, 1.18);
-  y += (finalY - y) * verticalStretch * 0.24;
-
-  return { x, y };
-}
-
-function getTargetRow(targetRect: Rect, v: number) {
-  const profile = Math.pow(Math.sin(v * Math.PI), 0.92);
-  const width = targetRect.width * (0.66 + profile * 0.26);
-  const centerShift = (0.5 - v) * targetRect.width * 0.08;
-  const centerX = targetRect.x + targetRect.width / 2 + centerShift;
+function createMeshProfile(rect: Rect, mode: QualityMode): MeshProfile {
+  const preset = QUALITY_PRESETS[mode];
+  const cols = clampInt(
+    Math.round(rect.width / preset.targetCellX),
+    preset.minCols,
+    preset.maxCols,
+  );
+  const rows = clampInt(
+    Math.round(rect.height / preset.targetCellY),
+    preset.minRows,
+    preset.maxRows,
+  );
 
   return {
-    left: centerX - width / 2,
-    width,
-    top: targetRect.y + targetRect.height * v,
+    mode,
+    cols,
+    rows,
+    dprCap: preset.dprCap,
+    rowData: buildRowData(rows),
+    colData: buildColData(cols),
+    meshBuffer: new Float32Array((cols + 1) * (rows + 1) * 2),
   };
 }
 
-function solveAffineTransform(
-  source: [Point, Point, Point],
-  destination: [Point, Point, Point],
-) {
-  const matrix = [
-    [source[0].x, source[0].y, 1, 0, 0, 0],
-    [0, 0, 0, source[0].x, source[0].y, 1],
-    [source[1].x, source[1].y, 1, 0, 0, 0],
-    [0, 0, 0, source[1].x, source[1].y, 1],
-    [source[2].x, source[2].y, 1, 0, 0, 0],
-    [0, 0, 0, source[2].x, source[2].y, 1],
-  ];
-  const vector = [
-    destination[0].x,
-    destination[0].y,
-    destination[1].x,
-    destination[1].y,
-    destination[2].x,
-    destination[2].y,
-  ];
-
-  const solution = solveLinearSystem(matrix, vector);
-  if (!solution) {
-    return null;
-  }
-
-  const [a, c, e, b, d, f] = solution;
-  if ([a, b, c, d, e, f].some((value) => !Number.isFinite(value))) {
-    return null;
-  }
-
-  return { a, b, c, d, e, f };
-}
-
-function solveLinearSystem(matrix: number[][], vector: number[]) {
-  const size = vector.length;
-  const augmented = matrix.map((row, index) => [...row, vector[index] ?? 0]);
-
-  for (let pivotCol = 0; pivotCol < size; pivotCol += 1) {
-    let pivotRow = pivotCol;
-
-    for (let row = pivotCol + 1; row < size; row += 1) {
-      if (
-        Math.abs(augmented[row]?.[pivotCol] ?? 0) >
-        Math.abs(augmented[pivotRow]?.[pivotCol] ?? 0)
-      ) {
-        pivotRow = row;
-      }
-    }
-
-    const pivotValue = augmented[pivotRow]?.[pivotCol] ?? 0;
-    if (Math.abs(pivotValue) < 1e-8) {
-      return null;
-    }
-
-    if (pivotRow !== pivotCol) {
-      [augmented[pivotCol], augmented[pivotRow]] = [
-        augmented[pivotRow]!,
-        augmented[pivotCol]!,
-      ];
-    }
-
-    for (let col = pivotCol; col <= size; col += 1) {
-      augmented[pivotCol]![col] /= pivotValue;
-    }
-
-    for (let row = 0; row < size; row += 1) {
-      if (row === pivotCol) {
-        continue;
-      }
-
-      const factor = augmented[row]?.[pivotCol] ?? 0;
-      if (Math.abs(factor) < 1e-10) {
-        continue;
-      }
-
-      for (let col = pivotCol; col <= size; col += 1) {
-        augmented[row]![col] -= factor * (augmented[pivotCol]?.[col] ?? 0);
-      }
-    }
-  }
-
-  return augmented.map((row) => row[size] ?? 0);
-}
-
-function inflateTriangle(
-  triangle: [Point, Point, Point],
-  amount: number,
-): [Point, Point, Point] {
-  const center = {
-    x: (triangle[0].x + triangle[1].x + triangle[2].x) / 3,
-    y: (triangle[0].y + triangle[1].y + triangle[2].y) / 3,
-  };
-
-  return triangle.map((point) => {
-    const dx = point.x - center.x;
-    const dy = point.y - center.y;
-    const length = Math.hypot(dx, dy) || 1;
+function buildRowData(rows: number) {
+  return Array.from({ length: rows + 1 }, (_, index) => {
+    const v = index / rows;
+    const band = Math.sin(v * Math.PI);
 
     return {
-      x: point.x + (dx / length) * amount,
-      y: point.y + (dy / length) * amount,
+      v,
+      band,
+      profile: Math.pow(band, 0.92),
+      verticalLag: Math.pow(1 - v, 1.5) * 0.22,
+      cornerLag: Math.pow(Math.abs(v - 0.5) * 2, 1.18),
+      stretch: Math.pow(1 - v, 1.18),
     };
-  }) as [Point, Point, Point];
+  });
+}
+
+function buildColData(cols: number) {
+  return Array.from({ length: cols + 1 }, (_, index) => {
+    const u = index / cols;
+    return {
+      u,
+      horizontalLag: Math.pow(1 - u, 1.9) * 0.62,
+      cornerLag: Math.pow(1 - u, 1.15) * 0.085,
+      neck: Math.pow(1 - u, 0.72),
+      stretch: Math.pow(1 - u, 0.68),
+    };
+  });
+}
+
+function fillMeshBuffer(
+  profile: MeshProfile,
+  sourceRect: Rect,
+  targetRect: Rect,
+  collapse: number,
+) {
+  const { rows, cols, rowData, colData, meshBuffer } = profile;
+  let pointer = 0;
+
+  for (let row = 0; row <= rows; row += 1) {
+    const rowProfile = rowData[row]!;
+    const sourceY = sourceRect.y + sourceRect.height * rowProfile.v;
+
+    const targetWidth = targetRect.width * (0.66 + rowProfile.profile * 0.26);
+    const centerShift = (0.5 - rowProfile.v) * targetRect.width * 0.08;
+    const targetCenterX = targetRect.x + targetRect.width / 2 + centerShift;
+    const targetLeft = targetCenterX - targetWidth / 2;
+    const targetY = targetRect.y + targetRect.height * rowProfile.v;
+    const targetCenterBase = targetRect.x + targetRect.width / 2;
+
+    for (let col = 0; col <= cols; col += 1) {
+      const colProfile = colData[col]!;
+      const sourceX = sourceRect.x + sourceRect.width * colProfile.u;
+
+      if (collapse <= 0.0001) {
+        meshBuffer[pointer] = sourceX;
+        meshBuffer[pointer + 1] = sourceY;
+        pointer += 2;
+        continue;
+      }
+
+      const finalX = targetLeft + targetWidth * colProfile.u;
+      const finalY = targetY;
+      const lag = Math.min(
+        0.87,
+        colProfile.horizontalLag +
+          rowProfile.verticalLag +
+          colProfile.cornerLag * rowProfile.cornerLag,
+      );
+      const pullX = smoothstep(lag * 0.42, 1, collapse);
+      const pullY = smoothstep(lag * 0.82, 1, collapse);
+
+      let x = mix(sourceX, finalX, pullX);
+      let y = mix(sourceY, finalY, pullY);
+
+      const neckPull =
+        smoothstep(0.16, 0.94, collapse) *
+        colProfile.neck *
+        (0.095 + rowProfile.band * 0.08);
+      x += (targetCenterBase - x) * neckPull;
+
+      const verticalStretch =
+        smoothstep(0.24, 1, collapse) *
+        colProfile.stretch *
+        rowProfile.stretch;
+      y += (finalY - y) * verticalStretch * 0.24;
+
+      meshBuffer[pointer] = x;
+      meshBuffer[pointer + 1] = y;
+      pointer += 2;
+    }
+  }
+}
+
+function getInitialQuality(rect: Rect): QualityMode {
+  const area = rect.width * rect.height;
+
+  if (area >= 850_000) {
+    return "medium";
+  }
+
+  return "high";
+}
+
+function getPhaseQuality(baseQuality: QualityMode, progress: number): QualityMode {
+  if (progress <= PHASE_LOW_START || progress >= PHASE_LOW_END) {
+    return demoteQuality(baseQuality);
+  }
+
+  return baseQuality;
+}
+
+function demoteQuality(mode: QualityMode): QualityMode {
+  switch (mode) {
+    case "high":
+      return "medium";
+    case "medium":
+      return "low";
+    default:
+      return "low";
+  }
+}
+
+function midpointLerp(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  amount: number,
+) {
+  return {
+    x: mix(ax, bx, amount),
+    y: mix(ay, by, amount),
+  };
 }
 
 function getMeshIndex(row: number, col: number, cols: number) {
-  return row * (cols + 1) + col;
-}
-
-function getMeshConfig(rect: Rect): MeshConfig {
-  return {
-    cols: clampInt(
-      Math.round(rect.width / TARGET_CELL_SIZE_X),
-      MIN_GRID_COLS,
-      MAX_GRID_COLS,
-    ),
-    rows: clampInt(
-      Math.round(rect.height / TARGET_CELL_SIZE_Y),
-      MIN_GRID_ROWS,
-      MAX_GRID_ROWS,
-    ),
-  };
+  return (row * (cols + 1) + col) * 2;
 }
 
 function insetRect(rect: Rect, insetX: number, insetY: number): Rect {
@@ -586,4 +704,19 @@ function easeInOutCubic(value: number) {
 
 function mix(start: number, end: number, amount: number) {
   return start + (end - start) * amount;
+}
+
+function getBandSubdivisions(mode: QualityMode, collapse: number) {
+  if (collapse <= FLAT_COLLAPSE_THRESHOLD) {
+    return 1;
+  }
+
+  switch (mode) {
+    case "high":
+      return 8;
+    case "medium":
+      return 7;
+    default:
+      return 6;
+  }
 }

@@ -104,6 +104,13 @@ export function AppLauncher({
     };
   }, []);
 
+  function resetLauncherState() {
+    setIsVisible(false);
+    setIsClosing(false);
+    setQuery("");
+    setActiveIndex(0);
+  }
+
   useLayoutEffect(() => {
     if (!onTriggerRectChange || !triggerRef.current) {
       return;
@@ -137,22 +144,25 @@ export function AppLauncher({
     };
   }, [onTriggerRectChange]);
 
-  function closeLauncher() {
+  function closeLauncher(immediate = false) {
     if (!isVisible || isClosing) {
+      return;
+    }
+
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+
+    if (immediate) {
+      resetLauncherState();
       return;
     }
 
     setIsClosing(true);
 
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-    }
-
     closeTimerRef.current = setTimeout(() => {
-      setIsVisible(false);
-      setIsClosing(false);
-      setQuery("");
-      setActiveIndex(0);
+      resetLauncherState();
       closeTimerRef.current = null;
     }, SPOTLIGHT_ANIMATION_MS);
   }
@@ -163,8 +173,8 @@ export function AppLauncher({
     }
 
     if (app.id === "claude") {
+      closeLauncher(true);
       onClaudeLaunch();
-      closeLauncher();
     }
   }
 
@@ -248,7 +258,7 @@ export function AppLauncher({
             type="button"
             aria-label="Close launcher"
             className="absolute inset-0 h-full w-full cursor-default bg-transparent"
-            onClick={closeLauncher}
+            onClick={() => closeLauncher()}
           />
 
           <div

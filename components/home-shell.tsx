@@ -118,7 +118,12 @@ export function HomeShell() {
       return;
     }
 
-    setGenieWindowRect(measureWindowRect(liveSurfaceRef.current) ?? windowRect);
+    if (geniePhase === "minimizing-genie") {
+      setGenieWindowRect(measureWindowRect(liveSurfaceRef.current) ?? windowRect);
+      return;
+    }
+
+    setGenieWindowRect(windowRect);
   }, [geniePhase, transitionKey, windowRect]);
 
   const persistSnapshot = useCallback(
