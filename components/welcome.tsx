@@ -23,7 +23,8 @@ function Clawd() {
 export function Welcome() {
   return (
     <div className="select-none px-2 pt-1">
-      <div className="flex items-start gap-2">
+      <div className="h-[1.2em]" aria-hidden="true" />
+      <div className="mt-1 flex items-start gap-2">
         <Clawd />
         <div className="flex min-w-0 flex-col">
           <div

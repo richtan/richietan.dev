@@ -19,13 +19,14 @@ export function getOpeningWindowSnapshotDataUrl(rect: Pick<Rect, "width" | "heig
 
   const titleBarHeight = round(32 * sy);
   const terminalPaddingX = round(8 * sx);
-  const welcomeTop = round(titleBarHeight + 4 * sy);
+  const prefixBaseline = round(titleBarHeight + 15 * sy);
+  const welcomeTop = round(titleBarHeight + 24 * sy);
   const glyphX = round(10 * sx);
   const glyphY = round(welcomeTop + 20 * sy);
   const nameX = round(78 * sx);
   const nameY = round(welcomeTop + 28 * sy);
   const roleY = round(welcomeTop + 58 * sy);
-  const dividerTop = round(titleBarHeight + 138 * sy);
+  const dividerTop = round(titleBarHeight + 154 * sy);
   const promptTop = round(dividerTop + 16 * sy);
   const promptDividerBottom = round(promptTop + 39 * sy);
   const promptBaseline = round(promptTop + 28 * sy);
@@ -53,7 +54,6 @@ export function getOpeningWindowSnapshotDataUrl(rect: Pick<Rect, "width" | "heig
       <circle cx="${round(46 * sx)}" cy="${round(16 * sy)}" r="${round(7.5 * scale)}" fill="#FEBC2E"/>
       <circle cx="${round(70 * sx)}" cy="${round(16 * sy)}" r="${round(7.5 * scale)}" fill="#28C840"/>
       <text x="${round(width / 2)}" y="${round(21 * sy)}" text-anchor="middle" fill="#EBEBEB" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif" font-size="${titleFontSize}" font-weight="400">${escapeXml(TERMINAL_WINDOW_TITLE)}</text>
-
       <g fill="#D77757" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${round(16 * scale)}" font-weight="400">
         <text x="${glyphX}" y="${glyphY}"> ▐▛███▜▌</text>
         <text x="${glyphX}" y="${round(glyphY + 16 * sy)}">▝▜█████▛▘</text>
