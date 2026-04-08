@@ -501,6 +501,67 @@ export function Terminal() {
     };
   }, [closeHelpPanel, helpOpen, status]);
 
+  useEffect(() => {
+    const canRefocusPrompt = () => {
+      if (helpOpen) {
+        return false;
+      }
+
+      const activeElement = document.activeElement;
+      if (!activeElement || activeElement === document.body) {
+        return true;
+      }
+
+      if (activeElement === textareaRef.current) {
+        return false;
+      }
+
+      if (
+        activeElement instanceof HTMLElement &&
+        activeElement.closest(
+          [
+            "input",
+            "textarea",
+            "select",
+            "[contenteditable='true']",
+            "[role='textbox']",
+            "[data-keep-focus='true']",
+          ].join(","),
+        )
+      ) {
+        return false;
+      }
+
+      return true;
+    };
+
+    const refocusPrompt = () => {
+      if (!canRefocusPrompt()) {
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        if (!document.hidden && document.hasFocus() && canRefocusPrompt()) {
+          focusPrompt();
+        }
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        refocusPrompt();
+      }
+    };
+
+    window.addEventListener("focus", refocusPrompt);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", refocusPrompt);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [helpOpen]);
+
   async function submitText(value: string) {
     const trimmed = value.trim();
     if (!trimmed || status === "submitted" || status === "streaming") {
