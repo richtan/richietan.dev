@@ -17,6 +17,7 @@ import { MacWindow } from "@/components/mac-window";
 import { Terminal } from "@/components/terminal";
 import {
   isCachedWindowSnapshotCompatible,
+  isCachedWindowSnapshotOpeningCompatible,
   readCachedWindowSnapshot,
   writeCachedWindowSnapshot,
   type CachedWindowSnapshot,
@@ -29,6 +30,7 @@ import {
 
 const OPEN_FALLBACK_MS = 220;
 const SNAPSHOT_REFRESH_DEBOUNCE_MS = 650;
+const OPENING_FALLBACK_SNAPSHOT_SRC = "/claude-window-fallback.svg";
 
 function isGeniePhase(
   phase: WindowTransitionPhase,
@@ -83,11 +85,19 @@ export function HomeShell() {
       : null;
   }, [cachedSnapshot, windowRect]);
 
+  const openingCachedSnapshot = useMemo(() => {
+    return isCachedWindowSnapshotOpeningCompatible(cachedSnapshot, windowRect)
+      ? cachedSnapshot
+      : null;
+  }, [cachedSnapshot, windowRect]);
+
+  const openingSnapshotSrc = openingCachedSnapshot?.src ?? OPENING_FALLBACK_SNAPSHOT_SRC;
+
   const activeSnapshot =
     genieSnapshot?.key === transitionKey
       ? genieSnapshot.src
       : geniePhase === "opening-genie"
-        ? compatibleCachedSnapshot?.src ?? null
+        ? openingSnapshotSrc
         : null;
 
   const showGenie =
@@ -96,7 +106,7 @@ export function HomeShell() {
     activeSnapshot !== null &&
     genieWindowRect !== null;
   const showFallbackOpen =
-    geniePhase === "opening-genie" && activeSnapshot === null;
+    geniePhase === "opening-genie" && !showGenie;
   const renderMacWindow = !isClosed || isAnimating;
 
   const handleGenieComplete = useCallback(() => {
@@ -300,12 +310,10 @@ export function HomeShell() {
     const snapshot = lastSnapshotRef.current ?? compatibleCachedSnapshot?.src ?? null;
 
     if (isClosed) {
-      if (snapshot) {
-        setGenieSnapshot({
-          key: transitionKey + 1,
-          src: snapshot,
-        });
-      }
+      setGenieSnapshot({
+        key: transitionKey + 1,
+        src: openingSnapshotSrc,
+      });
       reopenWindow();
       return;
     }
@@ -328,6 +336,7 @@ export function HomeShell() {
     compatibleCachedSnapshot,
     isClosed,
     isMinimized,
+    openingSnapshotSrc,
     reopenWindow,
     restoreImmediately,
     restoreWindow,

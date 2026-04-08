@@ -98,3 +98,20 @@ export function isCachedWindowSnapshotCompatible(
 
   return widthDelta <= 8 && heightDelta <= 8 && aspectDelta <= 0.004;
 }
+
+export function isCachedWindowSnapshotOpeningCompatible(
+  snapshot: CachedWindowSnapshot | null,
+  rect: Pick<Rect, "width" | "height">,
+) {
+  if (!snapshot) {
+    return false;
+  }
+
+  const widthDelta = Math.abs(snapshot.width - rect.width);
+  const heightDelta = Math.abs(snapshot.height - rect.height);
+  const aspectDelta = Math.abs(
+    snapshot.width / snapshot.height - rect.width / rect.height,
+  );
+
+  return widthDelta <= 280 && heightDelta <= 220 && aspectDelta <= 0.12;
+}
