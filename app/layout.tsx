@@ -9,6 +9,9 @@ export const metadata: Metadata = {
     "Ask me anything about Richie Tan. A Claude Code-inspired personal website.",
 };
 
+const FALLBACK_BACKGROUND =
+  "linear-gradient(135deg, #1a1a2e 0%, #16213e 52%, #0f3460 100%)";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -16,7 +19,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${GeistSans.variable} ${hackNerdMono.variable}`}>
-      <body className="min-h-dvh overflow-hidden bg-cc-bg text-cc-text antialiased">
+      <body
+        className="min-h-dvh overflow-hidden text-cc-text antialiased"
+        style={{ background: FALLBACK_BACKGROUND }}
+      >
         {children}
       </body>
     </html>
