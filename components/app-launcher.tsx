@@ -217,25 +217,24 @@ export function AppLauncher({
             style={{ top: "19vh" }}
           >
             <div
-              className="pointer-events-auto"
+              className="pointer-events-auto overflow-hidden"
               style={{
-                width: "min(650px, calc(100vw - 5rem))",
+                width: "min(643px, calc(100vw - 5rem))",
+                background: "rgba(25, 27, 31, 0.76)",
+                border: "1.15px solid rgba(232, 236, 242, 0.34)",
+                boxShadow:
+                  "0 1px 1.5px rgba(0,0,0,0.22), 0 14px 30px rgba(0,0,0,0.16), 0 0 18px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.035), inset 0 -0.5px 0 rgba(0,0,0,0.08)",
+                backdropFilter: "blur(12px) saturate(1.1) brightness(1.03)",
+                WebkitBackdropFilter: "blur(12px) saturate(1.1) brightness(1.03)",
+                borderRadius: "29px",
                 animation: isClosing
                   ? `spotlightCloseScale ${SPOTLIGHT_ANIMATION_MS}ms ${OPEN_EASE} forwards, spotlightFadeOut ${SPOTLIGHT_ANIMATION_MS}ms ease-out forwards`
                   : `spotlightOpenScale ${SPOTLIGHT_ANIMATION_MS}ms ${SPOTLIGHT_OPEN_SCALE_TIMING} forwards, spotlightFadeIn ${SPOTLIGHT_ANIMATION_MS}ms ease-out forwards`,
               }}
             >
               <div
-                className="overflow-hidden px-6"
+                className="relative px-6"
                 style={{
-                  background:
-                    "linear-gradient(180deg, rgba(27,29,33,0.92) 0%, rgba(22,24,28,0.9) 100%)",
-                  border: "1.15px solid rgba(232, 236, 242, 0.28)",
-                  boxShadow:
-                    "0 1px 1.5px rgba(0,0,0,0.22), 0 14px 30px rgba(0,0,0,0.16), 0 0 18px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.035), inset 0 -0.5px 0 rgba(0,0,0,0.08)",
-                  backdropFilter: "blur(20px) saturate(1.03)",
-                  WebkitBackdropFilter: "blur(20px) saturate(1.03)",
-                  borderRadius: "29px",
                   paddingTop: showResultsRegion ? "12px" : "12px",
                   paddingBottom: showResultsRegion ? "12px" : "12px",
                   transition: [
@@ -244,116 +243,118 @@ export function AppLauncher({
                   ].join(", "),
                 }}
               >
-                <div
-                  className="flex items-center gap-3"
-                  style={{
-                    paddingBottom: showResultsRegion ? "9px" : "0px",
-                    transition: `padding-bottom 240ms ${OPEN_EASE}`,
-                  }}
-                >
-                  <SearchGlyph />
-                  <input
-                    ref={inputRef}
-                    value={query}
-                    onChange={(event) => {
-                      setQuery(event.target.value);
-                      setActiveIndex(0);
-                    }}
-                    onKeyDown={handleInputKeyDown}
-                    placeholder="Spotlight Search"
-                    className="w-full bg-transparent text-[26.5px] leading-none text-[#d9dde4] outline-none placeholder:text-[#9ea5af]"
-                    style={{
-                      fontFamily:
-                        '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif',
-                      fontWeight: 480,
-                      letterSpacing: "-0.038em",
-                      caretColor: "#f4f6f8",
-                    }}
-                  />
-                </div>
-
-                <div
-                  className="overflow-hidden"
-                  style={{
-                    display: "grid",
-                    gridTemplateRows: showResultsRegion ? "1fr" : "0fr",
-                    opacity: showResultsRegion ? 1 : 0,
-                    transition: [
-                      `grid-template-rows 260ms ${OPEN_EASE}`,
-                      `opacity 180ms ease-out`,
-                    ].join(", "),
-                  }}
-                >
+                <div className="relative z-10">
                   <div
-                    className="min-h-0"
+                    className="flex items-center gap-3"
                     style={{
-                      transform: showResultsRegion
-                        ? "translateY(0)"
-                        : "translateY(-10px)",
-                      transition: `transform 260ms ${OPEN_EASE}`,
+                      paddingBottom: showResultsRegion ? "9px" : "0px",
+                      transition: `padding-bottom 240ms ${OPEN_EASE}`,
+                    }}
+                  >
+                    <SearchGlyph />
+                    <input
+                      ref={inputRef}
+                      value={query}
+                      onChange={(event) => {
+                        setQuery(event.target.value);
+                        setActiveIndex(0);
+                      }}
+                      onKeyDown={handleInputKeyDown}
+                      placeholder="Spotlight Search"
+                      className="w-full bg-transparent text-[26.5px] leading-none text-[#d9dde4] outline-none placeholder:text-[#9ea5af]"
+                      style={{
+                        fontFamily:
+                          '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif',
+                        fontWeight: 480,
+                        letterSpacing: "-0.038em",
+                        caretColor: "#f4f6f8",
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    className="overflow-hidden"
+                    style={{
+                      display: "grid",
+                      gridTemplateRows: showResultsRegion ? "1fr" : "0fr",
+                      opacity: showResultsRegion ? 1 : 0,
+                      transition: [
+                        `grid-template-rows 260ms ${OPEN_EASE}`,
+                        `opacity 180ms ease-out`,
+                      ].join(", "),
                     }}
                   >
                     <div
-                      className="h-px"
+                      className="min-h-0"
                       style={{
-                        background:
-                          "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(201,206,214,0.12) 14%, rgba(201,206,214,0.12) 86%, rgba(255,255,255,0) 100%)",
-                        marginBottom: "11px",
-                        opacity: showResultsRegion ? 1 : 0,
-                        transition: "opacity 180ms ease-out",
+                        transform: showResultsRegion
+                          ? "translateY(0)"
+                          : "translateY(-10px)",
+                        transition: `transform 260ms ${OPEN_EASE}`,
                       }}
-                    />
-
-                    {filteredApps.length > 0 ? (
-                      filteredApps.map((app, index) => {
-                        return (
-                          <button
-                            key={app.id}
-                            type="button"
-                            onMouseEnter={() => setActiveIndex(index)}
-                            onClick={() => {
-                              setActiveIndex(index);
-                              launchApp(app);
-                            }}
-                            className="flex w-full items-center gap-3 px-1 py-3 text-left focus:outline-none"
-                          >
-                            <ClaudeAppIcon />
-                            <div className="min-w-0 flex-1">
-                              <div
-                                className="truncate text-[16px] text-[#f0f3f9]"
-                                style={{
-                                  fontFamily:
-                                    '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {app.label}
-                              </div>
-                              <div
-                                className="truncate text-[13px] text-[#a4a9b4]"
-                                style={{
-                                  fontFamily:
-                                    '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
-                                }}
-                              >
-                                {app.description}
-                              </div>
-                            </div>
-                            <LauncherStatus status={claudeStatus} />
-                          </button>
-                        );
-                      })
-                    ) : (
+                    >
                       <div
-                        className="px-2 py-5 text-center text-[14px] text-[#a4a9b4]"
+                        className="h-px"
                         style={{
-                          fontFamily:
-                            '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
+                          background:
+                            "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(201,206,214,0.12) 14%, rgba(201,206,214,0.12) 86%, rgba(255,255,255,0) 100%)",
+                          marginBottom: "11px",
+                          opacity: showResultsRegion ? 1 : 0,
+                          transition: "opacity 180ms ease-out",
                         }}
-                      >
-                        No applications found
-                      </div>
-                    )}
+                      />
+
+                      {filteredApps.length > 0 ? (
+                        filteredApps.map((app, index) => {
+                          return (
+                            <button
+                              key={app.id}
+                              type="button"
+                              onMouseEnter={() => setActiveIndex(index)}
+                              onClick={() => {
+                                setActiveIndex(index);
+                                launchApp(app);
+                              }}
+                              className="flex w-full items-center gap-3 px-1 py-3 text-left focus:outline-none"
+                            >
+                              <ClaudeAppIcon />
+                              <div className="min-w-0 flex-1">
+                                <div
+                                  className="truncate text-[16px] text-[#f0f3f9]"
+                                  style={{
+                                    fontFamily:
+                                      '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  {app.label}
+                                </div>
+                                <div
+                                  className="truncate text-[13px] text-[#a4a9b4]"
+                                  style={{
+                                    fontFamily:
+                                      '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
+                                  }}
+                                >
+                                  {app.description}
+                                </div>
+                              </div>
+                              <LauncherStatus status={claudeStatus} />
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div
+                          className="px-2 py-5 text-center text-[14px] text-[#a4a9b4]"
+                          style={{
+                            fontFamily:
+                              '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
+                          }}
+                        >
+                          No applications found
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
