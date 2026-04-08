@@ -15,6 +15,7 @@ import {
 } from "@/components/genie-window-overlay";
 import { MacWindow } from "@/components/mac-window";
 import { Terminal } from "@/components/terminal";
+import { getOpeningWindowSnapshotDataUrl } from "@/lib/opening-window-snapshot";
 import {
   isCachedWindowSnapshotCompatible,
   isCachedWindowSnapshotOpeningCompatible,
@@ -30,7 +31,6 @@ import {
 
 const OPEN_FALLBACK_MS = 220;
 const SNAPSHOT_REFRESH_DEBOUNCE_MS = 650;
-const OPENING_FALLBACK_SNAPSHOT_SRC = "/claude-window-fallback.svg";
 
 function isGeniePhase(
   phase: WindowTransitionPhase,
@@ -40,7 +40,7 @@ function isGeniePhase(
 
 type GenieSnapshot = {
   key: number;
-  src: string;
+  source: string;
 };
 
 export function HomeShell() {
@@ -72,6 +72,7 @@ export function HomeShell() {
     }),
     [win.state.height, win.state.width, win.state.x, win.state.y],
   );
+  const frameStyle = win.frameStyle;
   const finishGenieTransition = win.finishGenieTransition;
   const reopenWindow = win.reopen;
   const restoreWindow = win.restore;
@@ -91,11 +92,19 @@ export function HomeShell() {
       : null;
   }, [cachedSnapshot, windowRect]);
 
-  const openingSnapshotSrc = openingCachedSnapshot?.src ?? OPENING_FALLBACK_SNAPSHOT_SRC;
+  const generatedOpeningSnapshotSrc = useMemo(
+    () => getOpeningWindowSnapshotDataUrl(windowRect),
+    [windowRect],
+  );
+  const isInitialPageLoadOpen =
+    geniePhase === "opening-genie" && transitionKey === 1;
+  const openingSnapshotSrc = isInitialPageLoadOpen
+    ? generatedOpeningSnapshotSrc
+    : openingCachedSnapshot?.src ?? generatedOpeningSnapshotSrc;
 
   const activeSnapshot =
     genieSnapshot?.key === transitionKey
-      ? genieSnapshot.src
+      ? genieSnapshot.source
       : geniePhase === "opening-genie"
         ? openingSnapshotSrc
         : null;
@@ -105,8 +114,7 @@ export function HomeShell() {
     launcherRect !== null &&
     activeSnapshot !== null &&
     genieWindowRect !== null;
-  const showFallbackOpen =
-    geniePhase === "opening-genie" && !showGenie;
+  const showFallbackOpen = geniePhase === "opening-genie" && !showGenie;
   const renderMacWindow = !isClosed || isAnimating;
 
   const handleGenieComplete = useCallback(() => {
@@ -293,7 +301,7 @@ export function HomeShell() {
 
     setGenieSnapshot({
       key: transitionKey + 1,
-      src: snapshot,
+      source: snapshot,
     });
     minimizeWindow();
   }, [
@@ -312,7 +320,7 @@ export function HomeShell() {
     if (isClosed) {
       setGenieSnapshot({
         key: transitionKey + 1,
-        src: openingSnapshotSrc,
+        source: openingSnapshotSrc,
       });
       reopenWindow();
       return;
@@ -325,7 +333,7 @@ export function HomeShell() {
     if (snapshot) {
       setGenieSnapshot({
         key: transitionKey + 1,
-        src: snapshot,
+        source: snapshot,
       });
       restoreWindow();
       return;
@@ -356,7 +364,7 @@ export function HomeShell() {
         <GenieWindowOverlay
           key={transitionKey}
           phase={geniePhase}
-          imageSrc={activeSnapshot}
+          imageSource={activeSnapshot}
           windowRect={genieWindowRect}
           targetRect={launcherRect}
           animationKey={transitionKey}
@@ -373,6 +381,7 @@ export function HomeShell() {
           y={windowRect.y}
           width={windowRect.width}
           height={windowRect.height}
+          frameStyle={frameStyle}
           showOpenIntro={showFallbackOpen}
           disableInteraction={isGeniePhase(geniePhase)}
           hideVisual={

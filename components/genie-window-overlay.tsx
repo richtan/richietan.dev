@@ -17,11 +17,12 @@ const FULL_IMAGE_COLLAPSE_THRESHOLD = 0.065;
 export const GENIE_DURATION_MS = 460;
 
 type QualityMode = "high" | "medium" | "low";
-type SnapshotSource = HTMLImageElement | ImageBitmap;
+type SnapshotSource = HTMLImageElement | ImageBitmap | HTMLCanvasElement;
+type SnapshotInput = string | SnapshotSource;
 
 interface GenieWindowOverlayProps {
   phase: Exclude<WindowTransitionPhase, "idle">;
-  imageSrc: string;
+  imageSource: SnapshotInput;
   windowRect: Rect;
   targetRect: Rect;
   animationKey: number;
@@ -123,7 +124,7 @@ const QUALITY_PRESETS: Record<
 
 export function GenieWindowOverlay({
   phase,
-  imageSrc,
+  imageSource,
   windowRect,
   targetRect,
   animationKey,
@@ -131,8 +132,10 @@ export function GenieWindowOverlay({
   onComplete,
 }: GenieWindowOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [imageSource, setImageSource] = useState<SnapshotSource | null>(null);
+  const [resolvedImageSource, setResolvedImageSource] = useState<SnapshotSource | null>(null);
   const hasTakenOverRef = useRef(false);
+  const directImageSource = typeof imageSource === "string" ? null : imageSource;
+  const activeImageSource = directImageSource ?? resolvedImageSource;
   const towardIcon = phase === "minimizing-genie";
   const collapseTarget = useMemo(
     () => insetRect(targetRect, TARGET_INSET_X, TARGET_INSET_Y),
@@ -141,6 +144,10 @@ export function GenieWindowOverlay({
   const profiles = useMemo(() => createProfiles(windowRect), [windowRect]);
 
   useEffect(() => {
+    if (typeof imageSource !== "string") {
+      return;
+    }
+
     let cancelled = false;
     let bitmap: ImageBitmap | null = null;
     const nextImage = new Image();
@@ -159,7 +166,7 @@ export function GenieWindowOverlay({
       }
 
       if (!cancelled) {
-        setImageSource(resolvedSource);
+        setResolvedImageSource(resolvedSource);
         return;
       }
 
@@ -176,7 +183,7 @@ export function GenieWindowOverlay({
 
       void finalize();
     };
-    nextImage.src = imageSrc;
+    nextImage.src = imageSource;
 
     if (nextImage.complete) {
       void nextImage.decode().catch(() => undefined).finally(() => {
@@ -189,7 +196,7 @@ export function GenieWindowOverlay({
       nextImage.onload = null;
       bitmap?.close();
     };
-  }, [imageSrc]);
+  }, [imageSource]);
 
   useEffect(() => {
     hasTakenOverRef.current = false;
@@ -203,7 +210,7 @@ export function GenieWindowOverlay({
     }
 
     const canvas = canvasRef.current;
-    if (!canvas || !imageSource) {
+    if (!canvas || !activeImageSource) {
       return;
     }
 
@@ -289,7 +296,7 @@ export function GenieWindowOverlay({
 
       drawMeshFrame({
         context,
-        imageSource,
+        imageSource: activeImageSource,
         sourceRect: windowRect,
         viewport,
         profile,
@@ -327,8 +334,8 @@ export function GenieWindowOverlay({
     };
   }, [
     animationKey,
+    activeImageSource,
     collapseTarget,
-    imageSource,
     onComplete,
     onTakeover,
     profiles,

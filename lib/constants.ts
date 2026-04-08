@@ -3,6 +3,10 @@ export const CLAUDE_DISPLAY_CWD = "~/richietan.dev";
 export const CLAUDE_HEADER_TITLE = "Claude Code v2.1.92";
 export const CLAUDE_HEADER_SUBTITLE = "Sonnet 4.6 · Claude Max";
 export const CLAUDE_FOOTER_STATUS = "/resume";
+export const TERMINAL_WINDOW_TITLE = "richie — richietan.dev — zsh";
+export const WELCOME_NAME = "Richie Tan";
+export const WELCOME_ROLE = "Software Engineer";
+export const PROMPT_PLACEHOLDER = "Ask anything about Richie Tan";
 
 export const SLASH_COMMANDS = [
   {

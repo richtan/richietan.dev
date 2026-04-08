@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { CLAUDE_FOOTER_STATUS, SLASH_COMMANDS } from "@/lib/constants";
+import {
+  CLAUDE_FOOTER_STATUS,
+  PROMPT_PLACEHOLDER,
+  SLASH_COMMANDS,
+} from "@/lib/constants";
 import { getPromptHelpMenuColumns } from "@/lib/terminal-shortcuts";
 
 interface HistorySearchState {
@@ -36,6 +40,8 @@ const SLASH_COMMAND_NAME_SET: ReadonlySet<string> = new Set(
   SLASH_COMMANDS.map((command) => command.name),
 );
 const SLASH_COMMAND_PATTERN = /(^|[\s])(\/[a-zA-Z][a-zA-Z0-9:\-_]*)/g;
+const PROMPT_PLACEHOLDER_FIRST = PROMPT_PLACEHOLDER.slice(0, 1);
+const PROMPT_PLACEHOLDER_REST = PROMPT_PLACEHOLDER.slice(1);
 
 interface PromptHighlightRange {
   start: number;
@@ -208,14 +214,27 @@ export function InputArea({
             {disabled ? (
               <>
                 {renderPromptSegments(input, 0, promptHighlights)}
-                {input.length === 0 ? " " : null}
+                {input.length === 0 ? (
+                  <span className="text-cc-secondary">{PROMPT_PLACEHOLDER}</span>
+                ) : null}
               </>
             ) : (
               <>
                 {renderPromptSegments(beforeCursor, 0, promptHighlights)}
-                <span className="select-none bg-cc-text text-cc-bg">
-                  {cursorCharacter === " " ? "\u00A0" : cursorCharacter}
-                </span>
+                {input.length === 0 ? (
+                  <>
+                    <span className="select-none bg-cc-text text-cc-bg">
+                      {PROMPT_PLACEHOLDER_FIRST}
+                    </span>
+                    <span className="text-cc-secondary">
+                      {PROMPT_PLACEHOLDER_REST}
+                    </span>
+                  </>
+                ) : (
+                  <span className="select-none bg-cc-text text-cc-bg">
+                    {cursorCharacter === " " ? "\u00A0" : cursorCharacter}
+                  </span>
+                )}
                 {renderPromptSegments(
                   afterCursor,
                   Math.min(input.length, cursorPosition + 1),
@@ -246,6 +265,7 @@ export function InputArea({
             disabled={disabled}
             spellCheck={false}
             autoComplete="off"
+            placeholder={PROMPT_PLACEHOLDER}
           />
         </div>
         <PromptBorderRow />

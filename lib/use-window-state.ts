@@ -25,6 +25,13 @@ export interface Rect {
   height: number;
 }
 
+export interface WindowFrameStyle {
+  x: number;
+  y: number;
+  width: number | string;
+  height: number | string;
+}
+
 export type WindowTransitionPhase =
   | "idle"
   | "opening-genie"
@@ -70,6 +77,12 @@ const DEFAULT_RECT: Rect = {
   y: VP_PAD,
   width: 800,
   height: 600,
+};
+const DEFAULT_FRAME_STYLE: WindowFrameStyle = {
+  x: VP_PAD,
+  y: VP_PAD,
+  width: `calc(100vw - ${VP_PAD * 2}px)`,
+  height: `calc(100vh - ${VP_PAD * 2}px)`,
 };
 
 function subscribeToViewport(callback: () => void) {
@@ -268,14 +281,20 @@ export function useWindowState() {
     isAnimating: false,
     snapZone: null,
     usesDefaultRect: true,
-    transitionPhase: "opening-genie",
-    transitionKey: 1,
+    transitionPhase: "idle",
+    transitionKey: 0,
   });
   const [dragSnapZone, setDragSnapZone] = useState<SnapZone>(null);
   const preSnapRef = useRef<Rect | null>(null);
   const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resolvedRect = resolveRect(state, viewport);
+  const frameStyle: WindowFrameStyle =
+    state.usesDefaultRect &&
+    viewport.width === DEFAULT_VIEWPORT.width &&
+    viewport.height === DEFAULT_VIEWPORT.height
+      ? DEFAULT_FRAME_STYLE
+      : resolvedRect;
 
   useEffect(() => {
     return () => {
@@ -603,6 +622,7 @@ export function useWindowState() {
       ...state,
       ...resolvedRect,
     },
+    frameStyle,
     dragSnapZone,
     moveToRaw,
     resizeToRaw,

@@ -8,6 +8,8 @@ import {
   type Ref,
   type ReactNode,
 } from "react";
+import { TERMINAL_WINDOW_TITLE } from "@/lib/constants";
+import type { WindowFrameStyle } from "@/lib/use-window-state";
 
 interface MacWindowProps {
   children: ReactNode;
@@ -15,6 +17,7 @@ interface MacWindowProps {
   y: number;
   width: number;
   height: number;
+  frameStyle?: WindowFrameStyle;
   showOpenIntro?: boolean;
   surfaceRef?: Ref<HTMLDivElement>;
   disableInteraction?: boolean;
@@ -48,6 +51,7 @@ export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function Mac
   y,
   width,
   height,
+  frameStyle,
   showOpenIntro = false,
   surfaceRef,
   disableInteraction = false,
@@ -226,10 +230,10 @@ export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function Mac
       ref={ref}
       className="absolute z-30"
       style={{
-        left: x,
-        top: y,
-        width,
-        height,
+        left: frameStyle?.x ?? x,
+        top: frameStyle?.y ?? y,
+        width: frameStyle?.width ?? width,
+        height: frameStyle?.height ?? height,
         transition: combinedTransition,
         animation: showOpenIntro
           ? "windowOpen 220ms cubic-bezier(0.22, 1, 0.36, 1) both"
@@ -299,7 +303,7 @@ export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function Mac
               color: "#EBEBEB",
             }}
           >
-            richie — richietan.dev — zsh
+            {TERMINAL_WINDOW_TITLE}
           </span>
         </div>
 

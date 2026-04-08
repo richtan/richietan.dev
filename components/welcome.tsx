@@ -1,5 +1,7 @@
 "use client";
 
+import { WELCOME_NAME, WELCOME_ROLE } from "@/lib/constants";
+
 function Clawd() {
   return (
     <div className="flex flex-col leading-none text-cc-claude">
@@ -28,10 +30,10 @@ export function Welcome() {
             className="min-w-0 whitespace-pre font-semibold text-cc-text"
             style={{ fontSize: "24px", lineHeight: 1 }}
           >
-            Richie Tan
+            {WELCOME_NAME}
           </div>
           <div className="min-w-0 whitespace-pre text-cc-secondary">
-            Software Engineer
+            {WELCOME_ROLE}
           </div>
         </div>
       </div>

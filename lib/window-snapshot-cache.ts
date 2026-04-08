@@ -3,7 +3,7 @@
 import type { Rect } from "@/lib/use-window-state";
 
 const SNAPSHOT_CACHE_KEY = "richietan.dev::claude-window-snapshot";
-const SNAPSHOT_CACHE_VERSION = 3;
+const SNAPSHOT_CACHE_VERSION = 4;
 const SNAPSHOT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 3;
 
 export interface CachedWindowSnapshot {
