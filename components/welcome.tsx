@@ -26,7 +26,7 @@ function Clawd() {
 
 export function Welcome() {
   return (
-    <div className="select-none px-2 pt-1 pb-2">
+    <div className="select-none px-2 pt-1">
       <div className="flex items-center gap-2">
         <Clawd />
         <div className="flex min-w-0 flex-col">
