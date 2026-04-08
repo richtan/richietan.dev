@@ -18,7 +18,7 @@ export function Desktop({
   onClaudeLaunch,
 }: DesktopProps) {
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]">
+    <div className="relative h-screen w-screen overflow-hidden bg-transparent">
       {children}
 
       {snapPreview ? <SnapPreviewOverlay zone={snapPreview} /> : null}

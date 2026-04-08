@@ -8,6 +8,7 @@ Claude Code-inspired personal website for Richie Tan, built as a browser-based t
 - Answers questions about Richie using an Anthropic model through the Vercel AI SDK.
 - Pulls live portfolio data from GitHub through tool calls for projects, skills, resume source, and profile stats.
 - Includes a macOS-style desktop/window shell with a floating application launcher for reopening Claude.
+- Randomly serves a macOS-style AI wallpaper on each full page load from a Blob-backed wallpaper pool.
 
 ## Stack
 
@@ -15,7 +16,9 @@ Claude Code-inspired personal website for Richie Tan, built as a browser-based t
 - React 19
 - Tailwind CSS 4
 - Vercel AI SDK (`ai`, `@ai-sdk/react`)
+- OpenAI provider (`@ai-sdk/openai`) for wallpaper generation
 - Anthropic provider (`@ai-sdk/anthropic`)
+- Vercel Blob (`@vercel/blob`) for generated wallpaper storage
 - `marked` + `highlight.js` for terminal-style markdown rendering
 - GitHub REST + GraphQL fetches for live portfolio data
 
@@ -31,6 +34,9 @@ Claude Code-inspired personal website for Richie Tan, built as a browser-based t
 
    ```bash
    ANTHROPIC_API_KEY=...
+   OPENAI_API_KEY=...
+   BLOB_READ_WRITE_TOKEN=...
+   CRON_SECRET=... # required for production cron auth
    GITHUB_TOKEN=... # optional but recommended
    ```
 
@@ -55,6 +61,12 @@ npm run start
 
 - `ANTHROPIC_API_KEY`
   Required. Used by `app/api/chat/route.ts` to stream model responses.
+- `OPENAI_API_KEY`
+  Required for automatic wallpaper generation via `gpt-image-1.5`.
+- `BLOB_READ_WRITE_TOKEN`
+  Required for reading/writing the wallpaper pool and manifest in Vercel Blob.
+- `CRON_SECRET`
+  Required in production so the wallpaper cron route only accepts trusted Vercel cron invocations.
 - `GITHUB_TOKEN`
   Optional but recommended. Enables GitHub GraphQL-backed features like pinned repos and contribution stats. Without it, some GitHub-derived data gracefully degrades.
 
@@ -63,11 +75,13 @@ npm run start
 ### App shell
 
 - `app/page.tsx`
-  Dynamically loads the client-only shell.
+  Server-rendered entrypoint that chooses a wallpaper per request and renders the client shell on top.
 - `components/home-shell.tsx`
   Composes the desktop, macOS-style window, and terminal.
+- `components/home-shell-loader.tsx`
+  Client wrapper that keeps the desktop/window shell client-only without blocking the server-rendered wallpaper.
 - `components/desktop.tsx`
-  Owns the desktop surface, snap preview, and floating application launcher.
+  Owns the transparent desktop surface, snap preview, and floating application launcher.
 - `components/mac-window.tsx`
   Handles window drag, resize, minimize, maximize, and close behavior.
 
@@ -96,6 +110,8 @@ npm run start
   Normalizes model/tool output into UI transcript nodes.
 - `lib/constants.ts`
   Header/footer text plus slash-command definitions.
+- `lib/wallpapers.ts`
+  Blob-backed wallpaper manifest, random selection, and AI generation/top-up logic.
 
 ## Slash Commands
 
@@ -114,11 +130,12 @@ Prompt-style commands are transformed server-side into richer prompts before bei
 
 - Allowed browser origins are hardcoded in `app/api/chat/route.ts`. If you add a new domain or preview host, update that list.
 - Rate limiting is in-memory and resets on restart or redeploy.
+- Wallpaper generation runs through `app/api/cron/wallpapers/route.ts` and is intended to be invoked by Vercel Cron.
 - App/browser icons use Next.js app metadata file conventions from `app/`:
   - `app/favicon.ico`
   - `app/icon.png`
   - `app/apple-icon.png`
-- The root page is intentionally client-rendered via dynamic import to avoid SSR issues with the desktop/window shell.
+- `vercel.json` configures the automatic wallpaper top-up schedule.
 
 ## Validation
 

@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.66",
+    "@ai-sdk/openai": "^3.0.52",
     "@ai-sdk/react": "^3.0.148",
+    "@vercel/blob": "^2.3.3",
     "ai": "^6.0.146",
     "geist": "^1.7.0",
     "highlight.js": "^11.11.1",

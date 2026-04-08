@@ -25,17 +25,22 @@ npm run start
 ## Environment
 
 - `ANTHROPIC_API_KEY` is required for chat responses.
+- `OPENAI_API_KEY` is required for automatic wallpaper generation.
+- `BLOB_READ_WRITE_TOKEN` is required for the wallpaper pool stored in Vercel Blob.
+- `CRON_SECRET` is required in production for the wallpaper cron route.
 - `GITHUB_TOKEN` is optional but recommended for pinned repos and GitHub contribution stats.
 - Never commit secrets or paste secret values into docs, code comments, or logs.
 
 ## Architecture Map
 
 - `app/page.tsx`
-  Client-only entrypoint via dynamic import.
+  Server-rendered entrypoint that selects a wallpaper per request.
+- `components/home-shell-loader.tsx`
+  Client-only loader for the desktop/window shell.
 - `components/home-shell.tsx`
   Composes desktop, window, and terminal.
 - `components/desktop.tsx`
-  Desktop surface, application launcher, and snap preview.
+  Transparent desktop surface, application launcher, and snap preview.
 - `components/mac-window.tsx`
   Window controls, drag, resize, minimize, maximize, close.
 - `components/terminal.tsx`
@@ -50,6 +55,8 @@ npm run start
   Transcript normalization layer used by the terminal renderer.
 - `lib/constants.ts`
   Slash commands, header/footer copy, and static terminal strings.
+- `lib/wallpapers.ts`
+  Blob manifest, random wallpaper selection, and cron-driven image generation.
 
 ## Project Conventions
 
@@ -59,7 +66,7 @@ npm run start
   - `app/favicon.ico`
   - `app/icon.png`
   - `app/apple-icon.png`
-- Keep `app/page.tsx` client-only unless there is a strong reason to rework the shell architecture.
+- Keep the shell itself client-only, but allow `app/page.tsx` to stay server-rendered for wallpaper selection and other request-time background work.
 - When changing prompt/help/shortcut behavior, update both the behavior and the user-visible help text.
 - When adding new slash commands, update the definitions in `lib/constants.ts` and ensure the terminal/local handling still matches.
 
@@ -69,6 +76,8 @@ npm run start
 - `app/api/chat/route.ts` hardcodes allowed origins. If a new domain, subdomain, or local port is introduced, update that list.
 - Rate limiting is in-memory per process. Do not describe it as durable or shared across instances.
 - GitHub data fetches use in-memory TTL caching in `lib/github.ts`. Preserve graceful degradation when GitHub requests fail.
+- Wallpaper backgrounds are selected server-side from Vercel Blob. Keep the desktop surface transparent so the background remains visible.
+- Wallpaper generation is automatic via Vercel Cron; do not add a public admin UI or password form for it unless explicitly requested.
 
 ## Editing Guidance
 
