@@ -20,6 +20,7 @@ import {
   AppMessage,
   createAssistantNoteMessage,
   createAssistantTextMessage,
+  getCommittedStreamingText,
   createUserTextMessage,
   normalizeMessages,
   type TranscriptNode,
@@ -1174,6 +1175,11 @@ export function Terminal() {
             case "user-command":
               return `${node.id}:${node.type}:${node.command.length}`;
             case "assistant-text":
+              return `${node.id}:${node.type}:${
+                node.id === streamingAssistantTextId
+                  ? getCommittedStreamingText(node.text).length
+                  : node.text.length
+              }`;
             case "assistant-thinking":
             case "assistant-error":
             case "system-note":
@@ -1191,7 +1197,7 @@ export function Terminal() {
         `spinner:${showSpinner ? 1 : 0}`,
         errorNode ? `error:${errorNode.text.length}` : "error:0",
       ].join("|"),
-    [errorNode, helpOpen, showSpinner, transcript],
+    [errorNode, helpOpen, showSpinner, streamingAssistantTextId, transcript],
   );
 
   useEffect(() => {

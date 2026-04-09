@@ -267,6 +267,15 @@ export function createAssistantPanelMessage(
   };
 }
 
+export function getCommittedStreamingText(text: string) {
+  const lastNewline = text.lastIndexOf("\n");
+  if (lastNewline === -1) {
+    return "";
+  }
+
+  return text.slice(0, lastNewline + 1);
+}
+
 export function normalizeMessages(
   messages: AppMessage[],
   { verboseOutput }: { verboseOutput: boolean },
