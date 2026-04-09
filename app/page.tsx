@@ -1,5 +1,5 @@
 import { connection } from "next/server";
-import { HomeShellLoader } from "@/components/home-shell-loader";
+import { HomeShell } from "@/components/home-shell";
 import { WallpaperBackground } from "@/components/wallpaper-background";
 import { getRandomWallpaper } from "@/lib/wallpapers";
 
@@ -21,7 +21,7 @@ export default async function Home() {
       />
 
       <div className="relative z-10 h-dvh w-full">
-        <HomeShellLoader />
+        <HomeShell />
       </div>
     </main>
   );

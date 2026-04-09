@@ -8,15 +8,17 @@ import {
   type Ref,
   type ReactNode,
 } from "react";
-import { TERMINAL_WINDOW_TITLE } from "@/lib/constants";
-import type { WindowFrameStyle } from "@/lib/use-window-state";
+import type { WindowFrameStyle } from "@/lib/desktop-manager";
 
 interface MacWindowProps {
   children: ReactNode;
+  title: string;
   x: number;
   y: number;
   width: number;
   height: number;
+  minWidth?: number;
+  minHeight?: number;
   frameStyle?: WindowFrameStyle;
   showOpenIntro?: boolean;
   surfaceRef?: Ref<HTMLDivElement>;
@@ -35,22 +37,26 @@ interface MacWindowProps {
   onMinimize: () => void;
   onClose: () => void;
   onAnimationEnd: () => void;
+  onFocusRequest?: () => void;
 }
 
 const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 const ANIM_DURATION = "0.4s";
-const MIN_W = 450;
-const MIN_H = 300;
+const DEFAULT_MIN_W = 450;
+const DEFAULT_MIN_H = 300;
 const HANDLE = 6;
 
 type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
 export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function MacWindow({
   children,
+  title,
   x,
   y,
   width,
   height,
+  minWidth = DEFAULT_MIN_W,
+  minHeight = DEFAULT_MIN_H,
   frameStyle,
   showOpenIntro = false,
   surfaceRef,
@@ -69,6 +75,7 @@ export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function Mac
   onMinimize,
   onClose,
   onAnimationEnd,
+  onFocusRequest,
 }, ref) {
   const dragRef = useRef<{ startX: number; startY: number; winX: number; winY: number } | null>(null);
   const resizeRef = useRef<{
@@ -159,24 +166,24 @@ export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function Mac
       let nextHeight = active.origH;
 
       if (active.dir.includes("e")) {
-        nextWidth = Math.max(MIN_W, active.origW + dx);
+        nextWidth = Math.max(minWidth, active.origW + dx);
       }
 
       if (active.dir.includes("w")) {
         const proposedWidth = active.origW - dx;
-        if (proposedWidth >= MIN_W) {
+        if (proposedWidth >= minWidth) {
           nextWidth = proposedWidth;
           nextX = active.origX + dx;
         }
       }
 
       if (active.dir === "s" || active.dir === "se" || active.dir === "sw") {
-        nextHeight = Math.max(MIN_H, active.origH + dy);
+        nextHeight = Math.max(minHeight, active.origH + dy);
       }
 
       if (active.dir === "n" || active.dir === "ne" || active.dir === "nw") {
         const proposedHeight = active.origH - dy;
-        if (proposedHeight >= MIN_H) {
+        if (proposedHeight >= minHeight) {
           nextHeight = proposedHeight;
           nextY = active.origY + dy;
         }
@@ -184,7 +191,7 @@ export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function Mac
 
       onResize(nextWidth, nextHeight, nextX, nextY);
     },
-    [onResize],
+    [minHeight, minWidth, onResize],
   );
 
   const handleResizePointerUp = useCallback((event: React.PointerEvent) => {
@@ -247,6 +254,7 @@ export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function Mac
             : "auto",
         ...extraStyle,
       }}
+      onPointerDownCapture={onFocusRequest}
       onTransitionEnd={(event) => {
         if (
           event.target === event.currentTarget &&
@@ -303,7 +311,7 @@ export const MacWindow = forwardRef<HTMLDivElement, MacWindowProps>(function Mac
               color: "#EBEBEB",
             }}
           >
-            {TERMINAL_WINDOW_TITLE}
+            {title}
           </span>
         </div>
 

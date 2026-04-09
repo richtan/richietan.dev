@@ -1,9 +1,7 @@
 "use client";
 
-import type { Rect } from "@/lib/use-window-state";
-
-const SNAPSHOT_CACHE_KEY = "richietan.dev::claude-window-snapshot";
-const SNAPSHOT_CACHE_VERSION = 4;
+const SNAPSHOT_CACHE_PREFIX = "richietan.dev::window-snapshot::";
+const SNAPSHOT_CACHE_VERSION = 5;
 const SNAPSHOT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 3;
 
 export interface CachedWindowSnapshot {
@@ -14,13 +12,13 @@ export interface CachedWindowSnapshot {
   savedAt: number;
 }
 
-export function readCachedWindowSnapshot(): CachedWindowSnapshot | null {
+export function readCachedWindowSnapshot(appId: string): CachedWindowSnapshot | null {
   if (typeof window === "undefined") {
     return null;
   }
 
   try {
-    const raw = window.localStorage.getItem(SNAPSHOT_CACHE_KEY);
+    const raw = window.localStorage.getItem(getSnapshotCacheKey(appId));
     if (!raw) {
       return null;
     }
@@ -37,7 +35,7 @@ export function readCachedWindowSnapshot(): CachedWindowSnapshot | null {
     }
 
     if (Date.now() - parsed.savedAt > SNAPSHOT_MAX_AGE_MS) {
-      clearCachedWindowSnapshot();
+      clearCachedWindowSnapshot(appId);
       return null;
     }
 
@@ -48,8 +46,9 @@ export function readCachedWindowSnapshot(): CachedWindowSnapshot | null {
 }
 
 export function writeCachedWindowSnapshot(
+  appId: string,
   src: string,
-  rect: Pick<Rect, "width" | "height">,
+  rect: { width: number; height: number },
 ) {
   if (typeof window === "undefined") {
     return;
@@ -64,19 +63,19 @@ export function writeCachedWindowSnapshot(
   };
 
   try {
-    window.localStorage.setItem(SNAPSHOT_CACHE_KEY, JSON.stringify(payload));
+    window.localStorage.setItem(getSnapshotCacheKey(appId), JSON.stringify(payload));
   } catch {
     // Ignore storage quota failures; in-memory fallback still works.
   }
 }
 
-export function clearCachedWindowSnapshot() {
+export function clearCachedWindowSnapshot(appId: string) {
   if (typeof window === "undefined") {
     return;
   }
 
   try {
-    window.localStorage.removeItem(SNAPSHOT_CACHE_KEY);
+    window.localStorage.removeItem(getSnapshotCacheKey(appId));
   } catch {
     // Ignore storage failures.
   }
@@ -84,7 +83,7 @@ export function clearCachedWindowSnapshot() {
 
 export function isCachedWindowSnapshotCompatible(
   snapshot: CachedWindowSnapshot | null,
-  rect: Pick<Rect, "width" | "height">,
+  rect: { width: number; height: number },
 ) {
   if (!snapshot) {
     return false;
@@ -101,7 +100,7 @@ export function isCachedWindowSnapshotCompatible(
 
 export function isCachedWindowSnapshotOpeningCompatible(
   snapshot: CachedWindowSnapshot | null,
-  rect: Pick<Rect, "width" | "height">,
+  rect: { width: number; height: number },
 ) {
   if (!snapshot) {
     return false;
@@ -114,4 +113,8 @@ export function isCachedWindowSnapshotOpeningCompatible(
   );
 
   return widthDelta <= 280 && heightDelta <= 220 && aspectDelta <= 0.12;
+}
+
+function getSnapshotCacheKey(appId: string) {
+  return `${SNAPSHOT_CACHE_PREFIX}${appId}`;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Rect, WindowTransitionPhase } from "@/lib/use-window-state";
+import type { Rect, WindowTransitionPhase } from "@/lib/desktop-manager";
 
 const TARGET_INSET_X = 7;
 const TARGET_INSET_Y = 7;

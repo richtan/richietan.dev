@@ -8,44 +8,15 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import type { Rect } from "@/lib/use-window-state";
-
-type ClaudeLauncherStatus = "open" | "minimized" | "closed";
+import type { AppDefinition, AppId } from "@/lib/app-registry";
+import type { LauncherAppStatus, Rect } from "@/lib/desktop-manager";
 
 interface AppLauncherProps {
-  claudeStatus: ClaudeLauncherStatus;
-  onClaudeLaunch: () => void;
+  apps: readonly AppDefinition[];
+  appStatuses: Record<string, LauncherAppStatus>;
+  onLaunchApp: (appId: AppId) => void;
   onTriggerRectChange?: (rect: Rect | null) => void;
 }
-
-interface LauncherApp {
-  id: string;
-  label: string;
-  description: string;
-  keywords: string[];
-}
-
-const CLAUDE_APP: LauncherApp = {
-  id: "claude",
-  label: "Claude",
-  description: "Claude Code terminal",
-  keywords: ["claude", "code", "terminal", "richie", "richietan"],
-};
-
-const BURST_RAYS = [
-  { x1: 0, y1: -13.5, x2: 0, y2: -3.8 },
-  { x1: 0, y1: 13.5, x2: 0, y2: 3.8 },
-  { x1: -13.5, y1: 0, x2: -3.8, y2: 0 },
-  { x1: 13.5, y1: 0, x2: 3.8, y2: 0 },
-  { x1: -9.5, y1: -9.5, x2: -2.9, y2: -2.9 },
-  { x1: 9.5, y1: 9.5, x2: 2.9, y2: 2.9 },
-  { x1: 9.5, y1: -9.5, x2: 2.9, y2: -2.9 },
-  { x1: -9.5, y1: 9.5, x2: -2.9, y2: 2.9 },
-  { x1: -12.8, y1: -3.7, x2: -4.1, y2: -1.2 },
-  { x1: 12.8, y1: 3.7, x2: 4.1, y2: 1.2 },
-  { x1: 12.8, y1: -3.7, x2: 4.1, y2: -1.2 },
-  { x1: -12.8, y1: 3.7, x2: -4.1, y2: 1.2 },
-];
 
 const OPEN_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 const SPOTLIGHT_ANIMATION_MS = 340;
@@ -53,8 +24,9 @@ const SPOTLIGHT_OPEN_SCALE_TIMING =
   "linear(0, 0.0258 2.5%, 0.0933 5%, 0.1892 7.5%, 0.3019 10%, 0.4219 12.5%, 0.5413 15%, 0.6546 17.5%, 0.7575 20%, 0.8476 22.5%, 0.9234 25%, 0.9847 27.5%, 1.032 30%, 1.0663 32.5%, 1.089 35%, 1.1019 37.5%, 1.1067 40%, 1.105 42.5%, 1.0986 45%, 1.0889 47.5%, 1.0771 50%, 1.0644 52.5%, 1.0516 55%, 1.0393 57.5%, 1.028 60%, 1.0181 62.5%, 1.0097 65%, 1.0028 67.5%, 0.9975 70%, 0.9936 72.5%, 0.9909 75%, 0.9893 77.5%, 0.9886 80%, 0.9887 82.5%, 0.9893 85%, 0.9903 87.5%, 0.9915 90%, 0.9928 92.5%, 0.9942 95%, 0.9955 97.5%, 1)";
 
 export function AppLauncher({
-  claudeStatus,
-  onClaudeLaunch,
+  apps,
+  appStatuses,
+  onLaunchApp,
   onTriggerRectChange,
 }: AppLauncherProps) {
   const [isVisible, setIsVisible] = useState(false);
@@ -68,18 +40,23 @@ export function AppLauncher({
   const showResultsRegion = normalizedQuery.length > 0;
   const open = isVisible && !isClosing;
 
+  const searchableApps = useMemo(() => {
+    return apps.map((app) => ({
+      app,
+      haystack: [app.label, app.description, ...app.keywords].join(" ").toLowerCase(),
+    }));
+  }, [apps]);
+
   const filteredApps = useMemo(() => {
     if (!normalizedQuery) {
       return [];
     }
 
-    return [CLAUDE_APP].filter((app) => {
-      const haystack = [app.label, app.description, ...app.keywords]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(normalizedQuery);
-    });
-  }, [normalizedQuery]);
+    return searchableApps
+      .filter((entry) => entry.haystack.includes(normalizedQuery))
+      .map((entry) => entry.app);
+  }, [normalizedQuery, searchableApps]);
+
   const selectedIndex =
     filteredApps.length === 0 ? 0 : Math.min(activeIndex, filteredApps.length - 1);
 
@@ -167,15 +144,13 @@ export function AppLauncher({
     }, SPOTLIGHT_ANIMATION_MS);
   }
 
-  function launchApp(app: LauncherApp | undefined) {
+  function launchApp(app: AppDefinition | undefined) {
     if (!app) {
       return;
     }
 
-    if (app.id === "claude") {
-      closeLauncher(true);
-      onClaudeLaunch();
-    }
+    closeLauncher(true);
+    onLaunchApp(app.id as AppId);
   }
 
   function handleTriggerClick() {
@@ -290,8 +265,8 @@ export function AppLauncher({
               <div
                 className="relative px-6"
                 style={{
-                  paddingTop: showResultsRegion ? "12px" : "12px",
-                  paddingBottom: showResultsRegion ? "12px" : "12px",
+                  paddingTop: "12px",
+                  paddingBottom: "12px",
                   transition: [
                     `padding-top 240ms ${OPEN_EASE}`,
                     `padding-bottom 240ms ${OPEN_EASE}`,
@@ -361,6 +336,8 @@ export function AppLauncher({
 
                       {filteredApps.length > 0 ? (
                         filteredApps.map((app, index) => {
+                          const Icon = app.Icon;
+
                           return (
                             <button
                               key={app.id}
@@ -372,7 +349,7 @@ export function AppLauncher({
                               }}
                               className="flex w-full items-center gap-3 px-1 py-3 text-left focus:outline-none"
                             >
-                              <ClaudeAppIcon />
+                              <Icon active={selectedIndex === index} />
                               <div className="min-w-0 flex-1">
                                 <div
                                   className="truncate text-[16px] text-[#f0f3f9]"
@@ -394,7 +371,9 @@ export function AppLauncher({
                                   {app.description}
                                 </div>
                               </div>
-                              <LauncherStatus status={claudeStatus} />
+                              <LauncherStatus
+                                status={appStatuses[app.id] ?? "closed"}
+                              />
                             </button>
                           );
                         })
@@ -461,36 +440,7 @@ function SearchGlyph() {
   );
 }
 
-function ClaudeAppIcon() {
-  return (
-    <div
-      className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[14px]"
-      style={{
-        background: "linear-gradient(180deg, #DD8E67 0%, #D9835B 100%)",
-        boxShadow:
-          "0 10px 18px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.14)",
-      }}
-    >
-      <svg width="30" height="30" viewBox="-15 -15 30 30" fill="none" aria-hidden="true">
-        {BURST_RAYS.map((ray, index) => (
-          <line
-            key={index}
-            x1={ray.x1}
-            y1={ray.y1}
-            x2={ray.x2}
-            y2={ray.y2}
-            stroke="#FAF7F2"
-            strokeWidth="3.2"
-            strokeLinecap="round"
-          />
-        ))}
-        <circle cx="0" cy="0" r="2.4" fill="#FAF7F2" />
-      </svg>
-    </div>
-  );
-}
-
-function LauncherStatus({ status }: { status: ClaudeLauncherStatus }) {
+function LauncherStatus({ status }: { status: LauncherAppStatus }) {
   const label =
     status === "open" ? "Open" : status === "minimized" ? "Minimized" : "Closed";
 

@@ -5,12 +5,14 @@ import {
   WELCOME_NAME,
   WELCOME_ROLE,
 } from "@/lib/constants";
-import type { Rect } from "@/lib/use-window-state";
 
 const BASE_WIDTH = 800;
 const BASE_HEIGHT = 600;
 
-export function getOpeningWindowSnapshotDataUrl(rect: Pick<Rect, "width" | "height">) {
+export function getClaudeOpeningWindowSnapshotDataUrl(rect: {
+  width: number;
+  height: number;
+}) {
   const width = Math.max(520, Math.round(rect.width));
   const height = Math.max(380, Math.round(rect.height));
   const sx = width / BASE_WIDTH;
@@ -44,34 +46,42 @@ export function getOpeningWindowSnapshotDataUrl(rect: Pick<Rect, "width" | "heig
   const placeholderFirst = PROMPT_PLACEHOLDER.slice(0, 1);
   const placeholderRest = PROMPT_PLACEHOLDER.slice(1);
 
+  return wrapSvg(width, height, `
+    <rect width="${width}" height="${height}" rx="${round(10 * scale)}" fill="#171A1F"/>
+    <rect width="${width}" height="${titleBarHeight}" rx="${round(10 * scale)}" fill="#323232"/>
+    <path d="M0 ${round(10 * scale)}C0 ${round(4.477 * scale)} ${round(4.477 * scale)} 0 ${round(10 * scale)} 0H${round(width - 10 * scale)}C${round(width - 4.477 * scale)} 0 ${width} ${round(4.477 * scale)} ${width} ${round(10 * scale)}V${titleBarHeight}H0V${round(10 * scale)}Z" fill="#323232"/>
+    ${trafficLights(sx, sy, scale)}
+    <text x="${round(width / 2)}" y="${round(21 * sy)}" text-anchor="middle" fill="#EBEBEB" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif" font-size="${titleFontSize}" font-weight="400">${escapeXml(TERMINAL_WINDOW_TITLE)}</text>
+    <g fill="#D77757" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${round(16 * scale)}" font-weight="400">
+      <text x="${glyphX}" y="${glyphY}"> ▐▛███▜▌</text>
+      <text x="${glyphX}" y="${round(glyphY + 16 * sy)}">▝▜█████▛▘</text>
+      <text x="${glyphX}" y="${round(glyphY + 32 * sy)}">  ▘▘ ▝▝  </text>
+    </g>
+    <text x="${nameX}" y="${nameY}" fill="#F8F8F8" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${nameFontSize}" font-weight="600">${escapeXml(WELCOME_NAME)}</text>
+    <text x="${nameX}" y="${roleY}" fill="#999999" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${roleFontSize}" font-weight="400">${escapeXml(WELCOME_ROLE)}</text>
+    <rect x="0" y="${dividerTop}" width="${width}" height="${Math.max(1, round(1 * sy))}" fill="#888888"/>
+    <rect x="0" y="${promptDividerBottom}" width="${width}" height="${Math.max(1, round(1 * sy))}" fill="#888888"/>
+    <text x="${terminalPaddingX}" y="${promptBaseline}" fill="#F8F8F8" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${promptFontSize}" font-weight="600">❯</text>
+    <rect x="${cursorX}" y="${round(promptBaseline - cursorHeight + 2 * sy)}" width="${cursorWidth}" height="${cursorHeight}" fill="#F8F8F8"/>
+    <text x="${cursorTextX}" y="${promptBaseline}" fill="#171A1F" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${promptFontSize}" font-weight="400">${escapeXml(placeholderFirst)}</text>
+    <text x="${promptTextX}" y="${promptBaseline}" fill="#999999" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${promptFontSize}" font-weight="400">${escapeXml(placeholderRest)}</text>
+    <text x="${round(terminalPaddingX + 12 * sx)}" y="${footerBaseline}" fill="#999999" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${footerFontSize}" font-weight="400">? for shortcuts</text>
+    <text x="${footerRightX}" y="${footerBaseline}" text-anchor="end" fill="#999999" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${footerFontSize}" font-weight="400">${escapeXml(CLAUDE_FOOTER_STATUS)}</text>
+  `);
+}
+
+function trafficLights(sx: number, sy: number, scale: number) {
+  return `
+    <circle cx="${round(22 * sx)}" cy="${round(16 * sy)}" r="${round(7.5 * scale)}" fill="#FF5F57"/>
+    <circle cx="${round(46 * sx)}" cy="${round(16 * sy)}" r="${round(7.5 * scale)}" fill="#FEBC2E"/>
+    <circle cx="${round(70 * sx)}" cy="${round(16 * sy)}" r="${round(7.5 * scale)}" fill="#28C840"/>
+  `;
+}
+
+function wrapSvg(width: number, height: number, body: string) {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none">
-      <rect width="${width}" height="${height}" rx="${round(10 * scale)}" fill="#171A1F"/>
-      <rect width="${width}" height="${titleBarHeight}" rx="${round(10 * scale)}" fill="#323232"/>
-      <path d="M0 ${round(10 * scale)}C0 ${round(4.477 * scale)} ${round(4.477 * scale)} 0 ${round(10 * scale)} 0H${round(width - 10 * scale)}C${round(width - 4.477 * scale)} 0 ${width} ${round(4.477 * scale)} ${width} ${round(10 * scale)}V${titleBarHeight}H0V${round(10 * scale)}Z" fill="#323232"/>
-      <circle cx="${round(22 * sx)}" cy="${round(16 * sy)}" r="${round(7.5 * scale)}" fill="#FF5F57"/>
-      <circle cx="${round(46 * sx)}" cy="${round(16 * sy)}" r="${round(7.5 * scale)}" fill="#FEBC2E"/>
-      <circle cx="${round(70 * sx)}" cy="${round(16 * sy)}" r="${round(7.5 * scale)}" fill="#28C840"/>
-      <text x="${round(width / 2)}" y="${round(21 * sy)}" text-anchor="middle" fill="#EBEBEB" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif" font-size="${titleFontSize}" font-weight="400">${escapeXml(TERMINAL_WINDOW_TITLE)}</text>
-      <g fill="#D77757" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${round(16 * scale)}" font-weight="400">
-        <text x="${glyphX}" y="${glyphY}"> ▐▛███▜▌</text>
-        <text x="${glyphX}" y="${round(glyphY + 16 * sy)}">▝▜█████▛▘</text>
-        <text x="${glyphX}" y="${round(glyphY + 32 * sy)}">  ▘▘ ▝▝  </text>
-      </g>
-
-      <text x="${nameX}" y="${nameY}" fill="#F8F8F8" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${nameFontSize}" font-weight="600">${escapeXml(WELCOME_NAME)}</text>
-      <text x="${nameX}" y="${roleY}" fill="#999999" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${roleFontSize}" font-weight="400">${escapeXml(WELCOME_ROLE)}</text>
-
-      <rect x="0" y="${dividerTop}" width="${width}" height="${Math.max(1, round(1 * sy))}" fill="#888888"/>
-      <rect x="0" y="${promptDividerBottom}" width="${width}" height="${Math.max(1, round(1 * sy))}" fill="#888888"/>
-
-      <text x="${terminalPaddingX}" y="${promptBaseline}" fill="#F8F8F8" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${promptFontSize}" font-weight="600">❯</text>
-      <rect x="${cursorX}" y="${round(promptBaseline - cursorHeight + 2 * sy)}" width="${cursorWidth}" height="${cursorHeight}" fill="#F8F8F8"/>
-      <text x="${cursorTextX}" y="${promptBaseline}" fill="#171A1F" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${promptFontSize}" font-weight="400">${escapeXml(placeholderFirst)}</text>
-      <text x="${promptTextX}" y="${promptBaseline}" fill="#999999" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${promptFontSize}" font-weight="400">${escapeXml(placeholderRest)}</text>
-
-      <text x="${round(terminalPaddingX + 12 * sx)}" y="${footerBaseline}" fill="#999999" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${footerFontSize}" font-weight="400">? for shortcuts</text>
-      <text x="${footerRightX}" y="${footerBaseline}" text-anchor="end" fill="#999999" font-family="'Hack Nerd Font Mono', Menlo, Monaco, Consolas, monospace" font-size="${footerFontSize}" font-weight="400">${escapeXml(CLAUDE_FOOTER_STATUS)}</text>
+      ${body}
     </svg>
   `.trim();
 

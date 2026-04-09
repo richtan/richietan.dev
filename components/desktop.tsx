@@ -2,21 +2,29 @@
 
 import type { ReactNode } from "react";
 import { AppLauncher } from "@/components/app-launcher";
-import { getSnapRect, type Rect, type SnapZone } from "@/lib/use-window-state";
+import type { AppDefinition, AppId } from "@/lib/app-registry";
+import {
+  getSnapRect,
+  type LauncherAppStatus,
+  type Rect,
+  type SnapZone,
+} from "@/lib/desktop-manager";
 
 interface DesktopProps {
   children: ReactNode;
   snapPreview: SnapZone;
-  claudeStatus: "open" | "minimized" | "closed";
-  onClaudeLaunch: () => void;
+  launcherApps: readonly AppDefinition[];
+  appStatuses: Record<string, LauncherAppStatus>;
+  onLaunchApp: (appId: AppId) => void;
   onLauncherTriggerRectChange: (rect: Rect | null) => void;
 }
 
 export function Desktop({
   children,
   snapPreview,
-  claudeStatus,
-  onClaudeLaunch,
+  launcherApps,
+  appStatuses,
+  onLaunchApp,
   onLauncherTriggerRectChange,
 }: DesktopProps) {
   return (
@@ -25,8 +33,9 @@ export function Desktop({
 
       {snapPreview ? <SnapPreviewOverlay zone={snapPreview} /> : null}
       <AppLauncher
-        claudeStatus={claudeStatus}
-        onClaudeLaunch={onClaudeLaunch}
+        apps={launcherApps}
+        appStatuses={appStatuses}
+        onLaunchApp={onLaunchApp}
         onTriggerRectChange={onLauncherTriggerRectChange}
       />
     </div>
