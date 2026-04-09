@@ -64,6 +64,16 @@ export type TranscriptNode =
       panel: "help";
     };
 
+export type StreamingAssistantText = {
+  id: string;
+  committedText: string;
+};
+
+export type TranscriptView = {
+  nodes: TranscriptNode[];
+  streamingAssistantText: StreamingAssistantText | null;
+};
+
 function isToolPart(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   part: any,
@@ -276,11 +286,50 @@ export function getCommittedStreamingText(text: string) {
   return text.slice(0, lastNewline + 1);
 }
 
+function getActiveStreamingAssistantText(messages: AppMessage[]) {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = messages[messageIndex];
+    if (message?.role !== "assistant") {
+      continue;
+    }
+
+    for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const part = message.parts[partIndex];
+      if (part?.type === "text" && part.state === "streaming") {
+        return {
+          messageId: message.id,
+          partIndex,
+          id: `${message.id}-text-${partIndex}`,
+          text: part.text,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
 export function normalizeMessages(
   messages: AppMessage[],
-  { verboseOutput }: { verboseOutput: boolean },
-): TranscriptNode[] {
+  {
+    verboseOutput,
+    splitStreamingAssistantText = false,
+  }: {
+    verboseOutput: boolean;
+    splitStreamingAssistantText?: boolean;
+  },
+): TranscriptView {
   const nodes: TranscriptNode[] = [];
+  const activeStreamingText = splitStreamingAssistantText
+    ? getActiveStreamingAssistantText(messages)
+    : null;
+  const streamingAssistantText =
+    activeStreamingText === null
+      ? null
+      : {
+          id: activeStreamingText.id,
+          committedText: getCommittedStreamingText(activeStreamingText.text),
+        };
 
   for (const message of messages) {
     if (message.role === "user") {
@@ -338,8 +387,25 @@ export function normalizeMessages(
       continue;
     }
 
-    message.parts.forEach((part, index) => {
+    for (let index = 0; index < message.parts.length; index += 1) {
+      if (
+        activeStreamingText &&
+        message.id === activeStreamingText.messageId &&
+        index > activeStreamingText.partIndex
+      ) {
+        break;
+      }
+
+      const part = message.parts[index];
       if (part.type === "text") {
+        if (
+          activeStreamingText &&
+          message.id === activeStreamingText.messageId &&
+          index === activeStreamingText.partIndex
+        ) {
+          break;
+        }
+
         if (part.text.trim()) {
           nodes.push({
             id: `${message.id}-text-${index}`,
@@ -347,7 +413,7 @@ export function normalizeMessages(
             text: part.text,
           });
         }
-        return;
+        continue;
       }
 
       if (part.type === "reasoning") {
@@ -358,15 +424,15 @@ export function normalizeMessages(
             text: part.text,
           });
         }
-        return;
+        continue;
       }
 
       if (part.type === "step-start") {
-        return;
+        continue;
       }
 
       if (!isToolPart(part)) {
-        return;
+        continue;
       }
 
       const toolName = getToolName(part);
@@ -396,7 +462,7 @@ export function normalizeMessages(
             text: "(ctrl+o to expand)",
           });
         }
-        return;
+        continue;
       }
 
       if (part.state === "output-error") {
@@ -416,7 +482,7 @@ export function normalizeMessages(
           text: result.text,
           multiline: result.multiline,
         });
-        return;
+        continue;
       }
 
       if (part.state === "output-denied") {
@@ -434,7 +500,7 @@ export function normalizeMessages(
           text: "Interrupted by user",
           multiline: false,
         });
-        return;
+        continue;
       }
 
       nodes.push({
@@ -444,8 +510,11 @@ export function normalizeMessages(
         detail: display.detail,
         state: "running",
       });
-    });
+    }
   }
 
-  return nodes;
+  return {
+    nodes,
+    streamingAssistantText,
+  };
 }

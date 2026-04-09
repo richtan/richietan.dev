@@ -20,7 +20,6 @@ import {
   AppMessage,
   createAssistantNoteMessage,
   createAssistantTextMessage,
-  getCommittedStreamingText,
   createUserTextMessage,
   normalizeMessages,
   type TranscriptNode,
@@ -300,10 +299,16 @@ export function Terminal() {
   const visibleMessages = messages.slice(screenStartIndex);
   const isThinking = isStreamingStatus(status);
 
-  const transcript = useMemo(
-    () => normalizeMessages(visibleMessages, { verboseOutput }),
-    [verboseOutput, visibleMessages],
+  const transcriptView = useMemo(
+    () =>
+      normalizeMessages(visibleMessages, {
+        verboseOutput,
+        splitStreamingAssistantText: isThinking,
+      }),
+    [isThinking, verboseOutput, visibleMessages],
   );
+  const transcript = transcriptView.nodes;
+  const streamingAssistantText = transcriptView.streamingAssistantText;
   const suggestions = input.startsWith("/")
     ? SLASH_COMMANDS.filter((command) =>
         command.name.startsWith(input.slice(1).toLowerCase()),
@@ -1139,20 +1144,6 @@ export function Terminal() {
     suggestions.length === 0 &&
     !isThinking;
   const showSpinner = isThinking && messages[messages.length - 1]?.role === "user";
-  const streamingAssistantTextId = useMemo(() => {
-    if (!isThinking) {
-      return null;
-    }
-
-    for (let index = transcript.length - 1; index >= 0; index -= 1) {
-      const node = transcript[index];
-      if (node?.type === "assistant-text") {
-        return node.id;
-      }
-    }
-
-    return null;
-  }, [isThinking, transcript]);
   const errorNode: TranscriptNode | null = useMemo(
     () =>
       error
@@ -1175,11 +1166,7 @@ export function Terminal() {
             case "user-command":
               return `${node.id}:${node.type}:${node.command.length}`;
             case "assistant-text":
-              return `${node.id}:${node.type}:${
-                node.id === streamingAssistantTextId
-                  ? getCommittedStreamingText(node.text).length
-                  : node.text.length
-              }`;
+              return `${node.id}:${node.type}:${node.text.length}`;
             case "assistant-thinking":
             case "assistant-error":
             case "system-note":
@@ -1193,11 +1180,14 @@ export function Terminal() {
               return `${node.id}:${node.type}:${node.panel}`;
           }
         }),
+        `streaming-text:${streamingAssistantText?.id ?? "none"}:${
+          streamingAssistantText?.committedText.length ?? 0
+        }`,
         `help:${helpOpen ? 1 : 0}`,
         `spinner:${showSpinner ? 1 : 0}`,
         errorNode ? `error:${errorNode.text.length}` : "error:0",
       ].join("|"),
-    [errorNode, helpOpen, showSpinner, streamingAssistantTextId, transcript],
+    [errorNode, helpOpen, showSpinner, streamingAssistantText, transcript],
   );
 
   useEffect(() => {
@@ -1250,12 +1240,20 @@ export function Terminal() {
       {showWelcome ? <Welcome /> : null}
 
       {transcript.map((node) => (
-        <Message
-          key={node.id}
-          node={node}
-          streaming={node.type === "assistant-text" && node.id === streamingAssistantTextId}
-        />
+        <Message key={node.id} node={node} />
       ))}
+
+      {streamingAssistantText && streamingAssistantText.committedText.length > 0 ? (
+        <Message
+          key={streamingAssistantText.id}
+          node={{
+            id: streamingAssistantText.id,
+            type: "assistant-text",
+            text: streamingAssistantText.committedText,
+          }}
+          streaming
+        />
+      ) : null}
 
       {helpOpen ? (
         <div className="mt-[1.2em] px-1">

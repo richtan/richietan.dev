@@ -668,7 +668,10 @@ function createCodeMarkup(text: string, language?: string) {
 function buildBlocks(content: string): RenderBlock[] {
   configureMarked();
 
-  const tokens = cachedLexer(stripPromptXMLTags(content));
+  return buildBlocksFromTokens(cachedLexer(stripPromptXMLTags(content)));
+}
+
+function buildBlocksFromTokens(tokens: Token[]): RenderBlock[] {
   const blocks: RenderBlock[] = [];
   let currentPieces: Piece[] = [];
 
@@ -702,6 +705,30 @@ function buildBlocks(content: string): RenderBlock[] {
 
   flushPieces();
   return blocks;
+}
+
+function MarkdownBlocks({
+  blocks,
+  dimColor = false,
+}: {
+  blocks: RenderBlock[];
+  dimColor?: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-[1.2em]">
+      {blocks.map((block, index) => {
+        if (block.type === "segments") {
+          return <Fragment key={`segments-${index}`}>{renderPieceBlock(block.pieces, dimColor)}</Fragment>;
+        }
+
+        if (block.type === "code") {
+          return <MarkdownCodeBlock key={`code-${index}`} html={block.html} />;
+        }
+
+        return <MarkdownTableBlock key={`table-${index}`} token={block.token} />;
+      })}
+    </div>
+  );
 }
 
 function toneClass(tone: SemanticTone | undefined) {
@@ -801,21 +828,7 @@ function MarkdownBody({
 }) {
   const blocks = useMemo(() => buildBlocks(content), [content]);
 
-  return (
-    <div className="flex min-w-0 flex-col gap-[1.2em]">
-      {blocks.map((block, index) => {
-        if (block.type === "segments") {
-          return <Fragment key={`segments-${index}`}>{renderPieceBlock(block.pieces, dimColor)}</Fragment>;
-        }
-
-        if (block.type === "code") {
-          return <MarkdownCodeBlock key={`code-${index}`} html={block.html} />;
-        }
-
-        return <MarkdownTableBlock key={`table-${index}`} token={block.token} />;
-      })}
-    </div>
-  );
+  return <MarkdownBlocks blocks={blocks} dimColor={dimColor} />;
 }
 
 function StreamingMarkdown({
@@ -851,17 +864,16 @@ function StreamingMarkdown({
     return stablePrefix;
   }, [stripped]);
   const unstableSuffix = stripped.substring(effectiveStablePrefix.length);
+  const blocks = useMemo(() => {
+    const stableTokens = effectiveStablePrefix
+      ? cachedLexer(effectiveStablePrefix)
+      : [];
+    const unstableTokens = unstableSuffix ? cachedLexer(unstableSuffix) : [];
 
-  return (
-    <div className="flex min-w-0 flex-col gap-[1.2em]">
-      {effectiveStablePrefix ? (
-        <MarkdownBody content={effectiveStablePrefix} dimColor={dimColor} />
-      ) : null}
-      {unstableSuffix ? (
-        <MarkdownBody content={unstableSuffix} dimColor={dimColor} />
-      ) : null}
-    </div>
-  );
+    return buildBlocksFromTokens([...stableTokens, ...unstableTokens]);
+  }, [effectiveStablePrefix, unstableSuffix]);
+
+  return <MarkdownBlocks blocks={blocks} dimColor={dimColor} />;
 }
 
 export function Markdown({

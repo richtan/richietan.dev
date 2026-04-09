@@ -2,10 +2,7 @@
 
 import { Markdown } from "./markdown";
 import { HelpPanel } from "./help-panel";
-import {
-  getCommittedStreamingText,
-  type TranscriptNode,
-} from "@/lib/transcript";
+import { type TranscriptNode } from "@/lib/transcript";
 
 const TRANSCRIPT_ROW_GAP = "mt-[1.2em]";
 const TRANSCRIPT_CONTINUATION = "mt-0";
@@ -42,24 +39,14 @@ export function Message({
       return <UserRow text={node.command} />;
 
     case "assistant-text":
-      {
-        const content = streaming
-          ? getCommittedStreamingText(node.text)
-          : node.text;
-
-        if (!content.trim()) {
-          return null;
-        }
-
-        return (
-          <div className={`${TRANSCRIPT_ROW_GAP} flex items-start px-2`}>
-            <span className="w-4 shrink-0 select-none text-cc-text">●</span>
-            <div className="min-w-0 max-w-full flex-1">
-              <Markdown content={content} streaming={streaming} />
-            </div>
+      return (
+        <div className={`${TRANSCRIPT_ROW_GAP} flex items-start px-2`}>
+          <span className="w-4 shrink-0 select-none text-cc-text">●</span>
+          <div className="min-w-0 max-w-full flex-1">
+            <Markdown content={node.text} streaming={streaming} />
           </div>
-        );
-      }
+        </div>
+      );
 
     case "assistant-thinking":
       return (
