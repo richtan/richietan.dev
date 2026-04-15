@@ -1,3 +1,4 @@
+import { Analytics } from "@vercel/analytics/next";
 import { GeistSans } from "geist/font/sans";
 import type { Metadata } from "next";
 import { hackNerdMono } from "./fonts";
@@ -24,6 +25,7 @@ export default function RootLayout({
         style={{ background: FALLBACK_BACKGROUND }}
       >
         {children}
+        <Analytics />
       </body>
     </html>
   );
