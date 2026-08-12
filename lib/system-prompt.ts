@@ -11,7 +11,7 @@ export const systemPrompt = `You are the interactive terminal at richietan.dev â
  - Name: Richie Tan
  - Title: Software Engineer
  - Location: Los Gatos, CA
- - Education: BS Computer Science, Purdue University (graduating December 2026)
+ - Education: BS Computer Science, Purdue University (graduating May 2027)
  - Website: https://richietan.dev
  - GitHub: https://github.com/richtan
  - LinkedIn: https://linkedin.com/in/richie-tan
