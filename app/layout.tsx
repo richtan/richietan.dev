@@ -4,10 +4,27 @@ import type { Metadata } from "next";
 import { hackNerdMono } from "./fonts";
 import "./globals.css";
 
+const SITE_TITLE = "Richie Tan — Software Engineer";
+const SITE_DESCRIPTION =
+  "Ask me anything about Richie Tan. A Claude Code-inspired personal website.";
+
 export const metadata: Metadata = {
-  title: "Richie Tan — Software Engineer",
-  description:
-    "Ask me anything about Richie Tan. A Claude Code-inspired personal website.",
+  metadataBase: new URL("https://richietan.dev"),
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: "/",
+    siteName: "Richie Tan",
+    type: "website",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+  },
 };
 
 const FALLBACK_BACKGROUND =
