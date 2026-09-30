@@ -6,7 +6,7 @@ import "./globals.css";
 
 const SITE_TITLE = "Richie Tan — Software Engineer";
 const SITE_DESCRIPTION =
-  "Ask me anything about Richie Tan. A Claude Code-inspired personal website.";
+  "Richie Tan is a software engineer studying CS at Purdue (December 2026). Ask anything about his work in a Claude Code-style terminal.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://richietan.dev"),
