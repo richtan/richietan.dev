@@ -164,7 +164,7 @@ export default async function Image() {
 
             <div style={{ display: "flex", marginTop: 18, padding: "0 14px" }}>
               <span style={{ width: 36 }}>●</span>
-              <span>Ask me anything about his work and projects.</span>
+              <span>CS @ Purdue (Dec 2026), based in Los Gatos, CA.</span>
             </div>
 
             <div
