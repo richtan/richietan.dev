@@ -6,7 +6,8 @@ Claude Code-inspired personal website for Richie Tan, built as a browser-based t
 
 - Recreates the feel of Claude Code in the browser, including a terminal-style transcript, prompt, shortcuts, slash commands, and local help surfaces.
 - Answers questions about Richie using an Anthropic model through the Vercel AI SDK.
-- Pulls live portfolio data from GitHub through tool calls for projects, skills, resume source, and profile stats.
+- Pulls live portfolio data from GitHub through tool calls for projects, skills, and profile stats.
+- Serves the current resume from Vercel Blob: the LaTeX source backs the `get_resume` tool and the PDF is available at `/resume.pdf`.
 - Includes a macOS-style desktop/window shell with a floating application launcher for reopening Claude.
 - Randomly serves a macOS-style AI wallpaper on each full page load from a Blob-backed wallpaper pool.
 
@@ -64,7 +65,7 @@ npm run start
 - `OPENAI_API_KEY`
   Required for automatic wallpaper generation via `gpt-image-1.5`.
 - `BLOB_READ_WRITE_TOKEN`
-  Required for reading/writing the wallpaper pool and manifest in Vercel Blob.
+  Required for reading/writing the wallpaper pool and manifest in Vercel Blob, and for reading the published resume.
 - `CRON_SECRET`
   Required in production so the wallpaper cron route only accepts trusted Vercel cron invocations.
 - `GITHUB_TOKEN`
@@ -110,6 +111,10 @@ npm run start
   Normalizes model/tool output into UI transcript nodes.
 - `lib/constants.ts`
   Header/footer text plus slash-command definitions.
+- `lib/resume.ts`
+  Reads the published resume (LaTeX source and PDF) from Vercel Blob.
+- `app/resume.pdf/route.ts`
+  Streams the current resume PDF at `/resume.pdf`.
 - `lib/wallpapers.ts`
   Blob-backed wallpaper manifest, random selection, and AI generation/top-up logic.
 
@@ -131,6 +136,7 @@ Prompt-style commands are transformed server-side into richer prompts before bei
 - Allowed browser origins are hardcoded in `app/api/chat/route.ts`. If you add a new domain or preview host, update that list.
 - Rate limiting is in-memory and resets on restart or redeploy.
 - Wallpaper generation runs through `app/api/cron/wallpapers/route.ts` and is intended to be invoked by Vercel Cron.
+- The resume is not stored in this repo. The private `richtan/resume` repo has a `Publish resume` GitHub Action that overwrites `resume/Richie_Tan_Resume.pdf` and `resume/Richie_Tan_Resume.tex` in the Blob store on every push to `main`, so only the latest version is ever public. The site picks up a new version within about five minutes, with no redeploy.
 - App/browser icons use Next.js app metadata file conventions from `app/`:
   - `app/favicon.ico`
   - `app/icon.png`

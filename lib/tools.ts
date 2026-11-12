@@ -6,17 +6,17 @@ import {
   getPinnedRepos,
   getContributionStats,
   getAggregatedLanguages,
-  getResumeLatex,
 } from "@/lib/github";
+import { getResumeLatex, RESUME_PDF_URL } from "@/lib/resume";
 
 export const tools = {
   get_resume: tool({
     description:
-      "Get Richie Tan's full resume as LaTeX source — contains work history, education, projects, and skills. Use when asked about experience, resume, career, background, or qualifications.",
+      "Get Richie Tan's full resume as LaTeX source — contains work history, education, projects, and skills — plus the URL of the PDF version. Use when asked about experience, resume, career, background, or qualifications.",
     inputSchema: z.object({}),
     execute: async () => {
       const latex = await getResumeLatex();
-      return { format: "latex", source: latex };
+      return { format: "latex", source: latex, pdfUrl: RESUME_PDF_URL };
     },
   }),
 

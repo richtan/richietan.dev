@@ -10,7 +10,7 @@ const headers: HeadersInit = {
 
 const cache = new Map<string, { data: unknown; expiry: number }>();
 
-async function cached<T>(
+export async function cached<T>(
   key: string,
   ttlMs: number,
   fn: () => Promise<T>,
@@ -200,17 +200,5 @@ export async function getAggregatedLanguages(): Promise<
     return Array.from(langMap.entries())
       .map(([language, bytes]) => ({ language, bytes }))
       .sort((a, b) => b.bytes - a.bytes);
-  });
-}
-
-/** Fetch the LaTeX resume source from richtan/resume repo */
-export async function getResumeLatex(): Promise<string> {
-  return cached("resume-tex", HOUR, async () => {
-    const res = await fetch(
-      `https://raw.githubusercontent.com/${GITHUB_USERNAME}/resume/main/Richie_Tan_Resume.tex`,
-      { headers },
-    );
-    if (!res.ok) throw new Error(`GitHub raw ${res.status}`);
-    return res.text();
   });
 }

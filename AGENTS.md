@@ -26,7 +26,7 @@ npm run start
 
 - `ANTHROPIC_API_KEY` is required for chat responses.
 - `OPENAI_API_KEY` is required for automatic wallpaper generation.
-- `BLOB_READ_WRITE_TOKEN` is required for the wallpaper pool stored in Vercel Blob.
+- `BLOB_READ_WRITE_TOKEN` is required for the wallpaper pool and the published resume, both stored in Vercel Blob.
 - `CRON_SECRET` is required in production for the wallpaper cron route.
 - `GITHUB_TOKEN` is optional but recommended for pinned repos and GitHub contribution stats.
 - Never commit secrets or paste secret values into docs, code comments, or logs.
@@ -65,6 +65,8 @@ npm run start
   Generated fallback/opening snapshot art for apps that opt into it.
 - `lib/constants.ts`
   Claude app strings and slash commands. Keep shell-generic data out of this file.
+- `lib/resume.ts` and `app/resume.pdf/route.ts`
+  Published resume read from Vercel Blob: LaTeX source for the `get_resume` tool and the PDF served at `/resume.pdf`.
 - `lib/wallpapers.ts`
   Blob manifest, random wallpaper selection, and cron-driven image generation.
 
@@ -90,6 +92,7 @@ npm run start
 - `app/api/chat/route.ts` hardcodes allowed origins. If a new domain, subdomain, or local port is introduced, update that list.
 - Rate limiting is in-memory per process. Do not describe it as durable or shared across instances.
 - GitHub data fetches use in-memory TTL caching in `lib/github.ts`. Preserve graceful degradation when GitHub requests fail.
+- The resume comes from Vercel Blob, not GitHub. The private `richtan/resume` repo publishes the current PDF and `.tex` to fixed `resume/` blob pathnames on push; never commit resume files to this public repo or fetch them from GitHub.
 - Wallpaper backgrounds are selected server-side from Vercel Blob. Keep the desktop surface transparent so the background remains visible.
 - Wallpaper generation is automatic via Vercel Cron; do not add a public admin UI or password form for it unless explicitly requested.
 
